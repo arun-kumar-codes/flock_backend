@@ -2,6 +2,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import os
 import smtplib
+import base64
+import hashlib
 
 from flask import current_app
 
@@ -22,14 +24,17 @@ def send_invitation_email(to_email: str) -> bool:
     try:
         # Check if invitation already exists
         existing_invitation = Invitation.query.filter_by(email=to_email).first()
-        if existing_invitation:
-            current_app.logger.warning(f"Invitation already exists for {to_email}")
-            return False
+        if not existing_invitation:
+            # current_app.logger.warning(f"Invitation already exists for {to_email}")
+            # return False
         
-        # Create invitation record
-        invitation = Invitation(email=to_email)
-        db.session.add(invitation)
-        db.session.commit()
+            # Create invitation record
+            invitation = Invitation(email=to_email)
+            db.session.add(invitation)
+            db.session.commit()
+        
+        # Create token by encoding the email
+        token = base64.urlsafe_b64encode(hashlib.sha256(to_email.encode()).digest()).decode('utf-8')
         
         # Email configuration
         smtp_server = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
@@ -54,6 +59,7 @@ def send_invitation_email(to_email: str) -> bool:
         - 
         
         To accept this invitation, please visit our platform by clicking on the link below.
+        http://localhost:3000/login?token={token}
         
         We're excited to have you join our community!
         
@@ -82,7 +88,7 @@ def send_invitation_email(to_email: str) -> bool:
                 <p>To accept this invitation, please visit our platform by clicking on the link below.</p>
                 
                 <div style="text-align: center; margin: 30px 0;">
-                    <a href="#" style="background-color: #3498db; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">Join Flock Platform</a>
+                    <a href="http://localhost:3000/login?token={token}" style="background-color: #3498db; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">Join Flock Platform</a>
                 </div>
                 
                 <p>We're excited to have you join our community!</p>

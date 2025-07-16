@@ -14,14 +14,16 @@ class User(db.Model):
     __tablename__ = 'users'
     
     id = db.Column(db.Integer, primary_key=True)
+    login_user_id = db.Column(db.String(80), unique=True, nullable=True)
     username = db.Column(db.String(80), unique=True, nullable=True)
-    email = db.Column(db.String(120), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=True)
     password_hash = db.Column(db.String(255), nullable=True)
     role = db.Column(db.Enum(UserRole), default=UserRole.VIEWER, nullable=False)
     
-    def __init__(self, email, username=None, password=None, role=UserRole.VIEWER):
-        self.email = email
+    def __init__(self, login_user_id, username=None, email=None, password=None, role=UserRole.VIEWER):
+        self.login_user_id = login_user_id
         self.username = username
+        self.email = email
         self.password_hash = self._hash_password(password) if password else None
         self.role = role
     
@@ -38,12 +40,13 @@ class User(db.Model):
         return bcrypt.checkpw(password.encode('utf-8'), self.password_hash.encode('utf-8'))
     
     def is_profile_complete(self):
-        """Check if user has completed their profile (username and password)"""
-        return self.username is not None and self.password_hash is not None
+        """Check if user has completed their profile (username, email and password)"""
+        return self.username is not None and self.email is not None and self.password_hash is not None
     
-    def update_profile(self, username, password):
+    def update_profile(self, username, email, password):
         """Update user profile with username and password"""
         self.username = username
+        self.email = email
         self.password_hash = self._hash_password(password)
     
     def to_dict(self):

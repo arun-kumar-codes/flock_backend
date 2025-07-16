@@ -1,5 +1,7 @@
+import base64
 from firebase_admin import auth as firebase_auth
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import create_access_token, create_refresh_token, jwt_required, get_jwt_identity
 
 from app import db
 from app.models import User, UserRole, Invitation
@@ -67,52 +69,61 @@ def login():
     try:
         id_token = request.json.get('idToken')
         decoded_token = firebase_auth.verify_id_token(id_token)
-        email = decoded_token.get('email')
+        login_user_id = decoded_token.get('user_id')
 
         # Check if user exists
-        user = User.query.filter_by(email=email).first()
+        user = User.query.filter_by(login_user_id=login_user_id).first()
         if not user:
-            invitation = Invitation.query.filter_by(email=email).first()
-            if invitation:
-                role = UserRole.CREATOR
+            token = request.args.get('token')
+            if token:
+                email = base64.urlsafe_b64decode(token).decode('utf-8')
+                invitation = Invitation.query.filter_by(email=email).first()
+                if invitation:
+                    role = UserRole.CREATOR
             else:
                 role = UserRole.VIEWER
-            user = User(email=email, role=role)
+            user = User(login_user_id=login_user_id, role=role)
             db.session.add(user)
             db.session.commit()
 
         profile_complete = user.is_profile_complete()
+        access_token = create_access_token(identity=user.login_user_id)
+        refresh_token = create_refresh_token(identity=user.login_user_id)
         
         return jsonify({
-            'message': 'Login successful', 
+            'message': 'Login successful',
+            'access_token': access_token,
+            'refresh_token': refresh_token,
             'user': user.to_dict(),
             'profile_complete': profile_complete
         }), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 401
+        return jsonify({'error': str(e)}), 400
     
 @auth_bp.route('/complete-profile', methods=['PUT'])
+@jwt_required()
 def complete_profile():
     try:
-        id_token = request.json.get('idToken')
-        decoded_token = firebase_auth.verify_id_token(id_token)
-        email = decoded_token.get('email')
-        
+        current_login_user_id = get_jwt_identity()
+        email = request.json.get('email')
         username = request.json.get('username')
         password = request.json.get('password')
         
-        if not username or not password:
-            return jsonify({'error': 'Username and password are required'}), 400
+        if not email or not  username or not password:
+            return jsonify({'error': 'All fields are required'}), 400
             
         existing_user = User.query.filter_by(username=username).first()
-        if existing_user and existing_user.email != email:
+        if existing_user:
             return jsonify({'error': 'Username already exists'}), 400
+        existing_email = User.query.filter_by(email=email).first()
+        if existing_email:
+            return jsonify({'error': 'Email already exists'}), 400
             
-        user = User.query.filter_by(email=email).first()
+        user = User.query.filter_by(login_user_id=current_login_user_id).first()
         if not user:
             return jsonify({'error': 'User not found'}), 404
             
-        user.update_profile(username, password)
+        user.update_profile(username, email, password)
         db.session.commit()
         
         return jsonify({
@@ -138,7 +149,7 @@ def login_password():
         if not identifier or not password:
             return jsonify({'error': 'Username/email and password are required'}), 400
         
-        # Find user by username
+        # Find user by email or username
         user = User.query.filter_by(email=identifier).first()
         if not user:
             user = User.query.filter_by(username=identifier).first()
@@ -146,9 +157,16 @@ def login_password():
         if not user or not user.check_password(password):
             return jsonify({'error': 'Invalid username/email or password'}), 400
         
+        # Generate JWT tokens
+        access_token = create_access_token(identity=user.login_user_id)
+        refresh_token = create_refresh_token(identity=user.login_user_id)
+        
         profile_complete = user.is_profile_complete()
+        
         return jsonify({
             'message': 'Login successful', 
+            'access_token': access_token,
+            'refresh_token': refresh_token,
             'user': user.to_dict(),
             'profile_complete': profile_complete
         }), 200
@@ -156,20 +174,43 @@ def login_password():
     except Exception as e:
         return jsonify({'error': 'Internal server error'}), 500
 
-
-@auth_bp.route('/me', methods=['GET'])
-def get_current_user():
-    """Get current user information"""
+@auth_bp.route('/refresh', methods=['POST'])
+@jwt_required(refresh=True)
+def refresh():
+    """Refresh JWT access token"""
     try:
-        id_token = request.json.get('idToken')
-        decoded_token = firebase_auth.verify_id_token(id_token)
-        email = decoded_token.get('email')
-        user = User.query.filter_by(email=email).first()
+        current_login_user_id = get_jwt_identity()
+        user = User.query.filter_by(login_user_id=current_login_user_id).first()
         
         if not user:
             return jsonify({'error': 'User not found'}), 404
         
-        return jsonify({'user': user.to_dict()}), 200
+        # Create new access token
+        access_token = create_access_token(identity=user.login_user_id)
+        
+        return jsonify({
+            'access_token': access_token
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@auth_bp.route('/me', methods=['GET'])
+@jwt_required()
+def get_current_user():
+    """Get current user information using jwt identity"""
+    try:
+        current_login_user_id = get_jwt_identity()
+        print(current_login_user_id)
+        user = User.query.filter_by(login_user_id=current_login_user_id).first()
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        return jsonify({
+            'user': user.to_dict(),
+            'profile_complete': user.is_profile_complete()
+        }), 200
         
     except Exception as e:
         return jsonify({'error': 'Internal server error'}), 500
