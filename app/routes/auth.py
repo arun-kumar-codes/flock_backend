@@ -5,6 +5,7 @@ from flask_jwt_extended import create_access_token, create_refresh_token, jwt_re
 
 from app import db
 from app.models import User, UserRole, Invitation
+from app.utils import admin_required
 from firebase_setup import *
 
 auth_bp = Blueprint('auth', __name__)
@@ -158,6 +159,8 @@ def login_password():
             return jsonify({'error': 'Invalid username/email or password'}), 400
         
         # Generate JWT tokens
+        print(user.login_user_id)
+        print(type(user.login_user_id))
         access_token = create_access_token(identity=user.login_user_id)
         refresh_token = create_refresh_token(identity=user.login_user_id)
         
@@ -180,6 +183,8 @@ def refresh():
     """Refresh JWT access token"""
     try:
         current_login_user_id = get_jwt_identity()
+        print(current_login_user_id)
+        print(type(current_login_user_id))
         user = User.query.filter_by(login_user_id=current_login_user_id).first()
         
         if not user:
@@ -216,6 +221,8 @@ def get_current_user():
         return jsonify({'error': 'Internal server error'}), 500
     
 @auth_bp.route('/all-users', methods=['GET'])
+@jwt_required()
+@admin_required
 def get_all_users():
     """Get all users"""
     try:
@@ -225,6 +232,8 @@ def get_all_users():
         return jsonify({'error': 'Internal server error'}), 500
     
 @auth_bp.route('/all-creators', methods=['GET'])
+@jwt_required()
+@admin_required
 def get_all_creators():
     """Get all creators"""
     try:
@@ -234,10 +243,28 @@ def get_all_creators():
         return jsonify({'error': 'Internal server error'}), 500
     
 @auth_bp.route('/all-viewers', methods=['GET'])
+@jwt_required()
+@admin_required
 def get_all_viewers():
     """Get all viewers"""
     try:
         viewers = User.query.filter(User.role == UserRole.VIEWER).all()
         return jsonify({'viewers': [viewer.to_dict() for viewer in viewers]}), 200
     except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+    
+@auth_bp.route('/delete-user/<int:id>', methods=['DELETE'])
+@jwt_required()
+@admin_required
+def delete_user(id):
+    """Delete user"""
+    try:
+        user = User.query.filter_by(id=id).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        db.session.delete(user)
+        db.session.commit()
+        return jsonify({'message': 'User deleted successfully'}), 200
+    except Exception as e:
+        db.session.rollback()
         return jsonify({'error': 'Internal server error'}), 500

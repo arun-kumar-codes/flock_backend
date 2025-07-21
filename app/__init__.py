@@ -26,8 +26,10 @@ def create_app(config_name='default'):
     # Register blueprints
     from app.routes.auth import auth_bp
     from app.routes.email import email_bp
+    from app.routes.blog import blog_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(email_bp, url_prefix='/api/email')
+    app.register_blueprint(blog_bp, url_prefix='/api/blog')
     
     return app 
