@@ -14,14 +14,12 @@ class User(db.Model):
     __tablename__ = 'users'
     
     id = db.Column(db.Integer, primary_key=True)
-    login_user_id = db.Column(db.String(80), unique=True, nullable=True)
     username = db.Column(db.String(80), unique=True, nullable=True)
-    email = db.Column(db.String(120), unique=True, nullable=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=True)
     role = db.Column(db.Enum(UserRole), default=UserRole.VIEWER, nullable=False)
     
-    def __init__(self, login_user_id, username=None, email=None, password=None, role=UserRole.VIEWER):
-        self.login_user_id = login_user_id
+    def __init__(self, username=None, email=None, password=None, role=UserRole.VIEWER):
         self.username = username
         self.email = email
         self.password_hash = self._hash_password(password) if password else None
@@ -41,12 +39,11 @@ class User(db.Model):
     
     def is_profile_complete(self):
         """Check if user has completed their profile (username, email and password)"""
-        return self.username is not None and self.email is not None and self.password_hash is not None
+        return self.username is not None and self.password_hash is not None
     
-    def update_profile(self, username, email, password):
+    def update_profile(self, username, password):
         """Update user profile with username and password"""
         self.username = username
-        self.email = email
         self.password_hash = self._hash_password(password)
     
     def to_dict(self):

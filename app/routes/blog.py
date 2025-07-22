@@ -14,8 +14,8 @@ blog_bp = Blueprint('blog', __name__)
 def create_blog():
     """Create a new blog post"""
     try:
-        current_login_user_id = get_jwt_identity()
-        user = User.query.filter_by(login_user_id=current_login_user_id).first()
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
         
         data = request.get_json()
         if not data:
@@ -54,7 +54,6 @@ def create_blog():
 def get_blog(blog_id):
     """Get a specific blog by ID"""
     try:
-        print(blog_id)
         blog = Blog.query.get(blog_id)
         
         if not blog:
@@ -118,8 +117,8 @@ def get_all_blogs():
 def get_my_blogs():
     """Get blogs created by the current user"""
     try:
-        current_login_user_id = get_jwt_identity()
-        user = User.query.filter_by(login_user_id=current_login_user_id).first()
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
         
         if not user:
             return jsonify({'error': 'User not found'}), 404
@@ -160,8 +159,8 @@ def get_my_blogs():
 def like_blog(blog_id):
     """Like a blog post"""
     try:
-        current_login_user_id = get_jwt_identity()
-        user = User.query.filter_by(login_user_id=current_login_user_id).first()
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
         
         if not user:
             return jsonify({'error': 'User not found'}), 404
@@ -193,8 +192,8 @@ def like_blog(blog_id):
 def unlike_blog(blog_id):
     """Unlike a blog post"""
     try:
-        current_login_user_id = get_jwt_identity()
-        user = User.query.filter_by(login_user_id=current_login_user_id).first()
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
         
         if not user:
             return jsonify({'error': 'User not found'}), 404
@@ -226,8 +225,8 @@ def unlike_blog(blog_id):
 def toggle_like_blog(blog_id):
     """Toggle like/unlike a blog post"""
     try:
-        current_login_user_id = get_jwt_identity()
-        user = User.query.filter_by(login_user_id=current_login_user_id).first()
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
         
         if not user:
             return jsonify({'error': 'User not found'}), 404

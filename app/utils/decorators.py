@@ -20,8 +20,8 @@ def admin_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
         try:
-            current_login_user_id = get_jwt_identity()
-            user = User.query.filter_by(login_user_id=current_login_user_id).first()
+            email = get_jwt_identity()
+            user = User.query.filter_by(email=email).first()
             
             if not user:
                 return jsonify({'error': 'User not found'}), 404
@@ -52,8 +52,8 @@ def creator_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
         try:
-            current_login_user_id = get_jwt_identity()
-            user = User.query.filter_by(login_user_id=current_login_user_id).first()
+            email = get_jwt_identity()
+            user = User.query.filter_by(email=email).first()
             
             if not user:
                 return jsonify({'error': 'User not found'}), 404

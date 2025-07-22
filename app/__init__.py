@@ -5,6 +5,9 @@ from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from config import config
 
+from dotenv import load_dotenv
+load_dotenv()
+
 # Initialize extensions
 db = SQLAlchemy()
 migrate = Migrate()
