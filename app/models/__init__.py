@@ -1,3 +1,3 @@
 # Models package 
 from .auth import User, UserRole, Invitation
-from .blog import Blog, Comment
+from .blog import Blog, Comment, BlogStatus
