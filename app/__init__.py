@@ -30,9 +30,11 @@ def create_app(config_name='default'):
     from app.routes.auth import auth_bp
     from app.routes.email import email_bp
     from app.routes.blog import blog_bp
+    from app.routes.video import video_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(email_bp, url_prefix='/api/email')
     app.register_blueprint(blog_bp, url_prefix='/api/blog')
+    app.register_blueprint(video_bp, url_prefix='/api/video')
     
     return app 

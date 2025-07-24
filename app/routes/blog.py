@@ -5,7 +5,7 @@ from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from app import db
-from app.models import Blog, User, BlogStatus
+from app.models import Blog, User, BlogStatus, Comment, UserRole
 from app.utils import creator_required, allowed_file, admin_required
 
 blog_bp = Blueprint('blog', __name__)
@@ -351,6 +351,7 @@ def get_blog(blog_id):
         }), 200
         
     except Exception as e:
+        print(e)
         return jsonify({'error': 'Internal server error'}), 500
 
 
@@ -408,72 +409,6 @@ def get_my_blogs():
         return jsonify({'error': 'Internal server error'}), 500
 
 
-@blog_bp.route('/<int:blog_id>/like', methods=['POST'])
-@jwt_required()
-def like_blog(blog_id):
-    """Like a blog post"""
-    try:
-        email = get_jwt_identity()
-        user = User.query.filter_by(email=email).first()
-        
-        if not user:
-            return jsonify({'error': 'User not found'}), 404
-        
-        blog = Blog.query.get(blog_id)
-        if not blog:
-            return jsonify({'error': 'Blog not found'}), 404
-        
-        # Check if user already liked the blog
-        if blog.is_liked_by(user.id):
-            return jsonify({'error': 'Blog already liked by this user'}), 400
-        
-        # Add like
-        blog.add_like(user.id)
-        db.session.commit()
-        
-        return jsonify({
-            'message': 'Blog liked successfully',
-            'blog': blog.to_dict(user.id)
-        }), 200
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': 'Internal server error'}), 500
-
-
-@blog_bp.route('/<int:blog_id>/unlike', methods=['POST'])
-@jwt_required()
-def unlike_blog(blog_id):
-    """Unlike a blog post"""
-    try:
-        email = get_jwt_identity()
-        user = User.query.filter_by(email=email).first()
-        
-        if not user:
-            return jsonify({'error': 'User not found'}), 404
-        
-        blog = Blog.query.get(blog_id)
-        if not blog:
-            return jsonify({'error': 'Blog not found'}), 404
-        
-        # Check if user has liked the blog
-        if not blog.is_liked_by(user.id):
-            return jsonify({'error': 'Blog not liked by this user'}), 400
-        
-        # Remove like
-        blog.remove_like(user.id)
-        db.session.commit()
-        
-        return jsonify({
-            'message': 'Blog unliked successfully',
-            'blog': blog.to_dict(user.id)
-        }), 200
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': 'Internal server error'}), 500
-
-
 @blog_bp.route('/<int:blog_id>/toggle-like', methods=['POST'])
 @jwt_required()
 def toggle_like_blog(blog_id):
@@ -505,6 +440,123 @@ def toggle_like_blog(blog_id):
             'message': f'Blog {action} successfully',
             'blog': blog.to_dict(user.id),
             'action': action
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@blog_bp.route('/<int:blog_id>/comment', methods=['POST'])
+@jwt_required()
+def create_comment(blog_id):
+    """Create a comment on a blog post"""
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        blog = Blog.query.get(blog_id)
+        if not blog:
+            return jsonify({'error': 'Blog not found'}), 404
+        
+        # Check if blog is published (only published blogs can be commented on)
+        if blog.status != BlogStatus.PUBLISHED:
+            return jsonify({'error': 'Comments can only be added to published blogs'}), 400
+        
+        comment_text = request.json.get('comment')
+        if not comment_text:
+            return jsonify({'error': 'Comment text is required'}), 400
+        
+        if len(comment_text.strip()) == 0:
+            return jsonify({'error': 'Comment cannot be empty'}), 400
+        
+        # Create new comment
+        comment = Comment(
+            comment=comment_text.strip(),
+            commented_by=user.id,
+            blog_id=blog_id
+        )
+        db.session.add(comment)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Comment created successfully',
+            'comment': comment.to_dict()
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@blog_bp.route('/comment/<int:comment_id>', methods=['PATCH'])
+@jwt_required()
+def edit_comment(comment_id):
+    """Edit a comment"""
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        comment = Comment.query.get(comment_id)
+        if not comment:
+            return jsonify({'error': 'Comment not found'}), 404
+        
+        # Check if the user is the author of the comment
+        if comment.commented_by != user.id:
+            return jsonify({'error': 'You can only edit your own comments'}), 403
+        
+        new_comment_text = request.json.get('comment')
+        if not new_comment_text:
+            return jsonify({'error': 'Comment text is required'}), 400
+        
+        if len(new_comment_text.strip()) == 0:
+            return jsonify({'error': 'Comment cannot be empty'}), 400
+        
+        # Update the comment
+        comment.comment = new_comment_text.strip()
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Comment updated successfully',
+            'comment': comment.to_dict()
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@blog_bp.route('/comment/<int:comment_id>', methods=['DELETE'])
+@jwt_required()
+def delete_comment(comment_id):
+    """Delete a comment"""
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        comment = Comment.query.get(comment_id)
+        if not comment:
+            return jsonify({'error': 'Comment not found'}), 404
+        
+        # Check if the user is the author of the comment or an admin
+        if comment.commented_by != user.id and user.role != UserRole.ADMIN:
+            return jsonify({'error': 'You can only delete your own comments'}), 403
+        
+        # Delete the comment
+        db.session.delete(comment)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Comment deleted successfully'
         }), 200
         
     except Exception as e:

@@ -272,11 +272,13 @@ def delete_user(id):
     """Delete user"""
     try:
         user = User.query.filter_by(id=id).first()
+        print(user)
         if not user:
             return jsonify({'error': 'User not found'}), 404
         db.session.delete(user)
         db.session.commit()
         return jsonify({'message': 'User deleted successfully'}), 200
     except Exception as e:
+        print(e)
         db.session.rollback()
         return jsonify({'error': 'Internal server error'}), 500

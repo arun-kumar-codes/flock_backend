@@ -1,6 +1,8 @@
 from datetime import datetime
 from enum import Enum
 from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.ext.mutable import MutableList
+import os
 
 from app import db
 
@@ -22,7 +24,7 @@ class Blog(db.Model):
     status = db.Column(db.Enum(BlogStatus), default=BlogStatus.DRAFT)
     archived = db.Column(db.Boolean, default=False)
     likes = db.Column(db.Integer, default=0)
-    liked_by = db.Column(ARRAY(db.Integer), default=[])
+    liked_by = db.Column(MutableList.as_mutable(ARRAY(db.Integer)), default=list)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     
@@ -91,11 +93,14 @@ class Blog(db.Model):
     
     def to_dict(self, user_id=None):
         """Convert blog to dictionary"""
+        base_url = os.getenv('BACKEND_URL')
+        image_url = f"{base_url}/{self.image}" if self.image else None
+
         return {
             'id': self.id,
             'title': self.title,
             'content': self.content,
-            'image': self.image,
+            'image': image_url,
             'status': self.status.value if self.status else None,
             'archived': self.archived,
             'likes': self.likes,
@@ -122,7 +127,7 @@ class Comment(db.Model):
     blog_id = db.Column(db.Integer, db.ForeignKey('blogs.id'), nullable=False)
     
     # Relationship with User (commenter)
-    commenter = db.relationship('User', backref=db.backref('comments', lazy=True))
+    commenter = db.relationship('User', backref=db.backref('comments', lazy=True, cascade='all, delete-orphan'))
     
     def __init__(self, comment, commented_by, blog_id):
         self.comment = comment
