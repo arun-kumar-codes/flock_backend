@@ -4,15 +4,19 @@ from firebase_admin import auth as firebase_auth
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, create_refresh_token, jwt_required, get_jwt_identity
 import requests
+from sqlalchemy import func
 
 from app import db
-from app.models import User, UserRole, Invitation
-from app.utils import admin_required
+from app.models import User, UserRole, Invitation, Video, Blog, VideoStatus, BlogStatus
+from app.utils import admin_required, creator_required
+from app.utils.blog import allowed_file, delete_previous_image
 from firebase_setup import *
 
 auth_bp = Blueprint('auth', __name__)
 
 RECAPTCHA_SECRET_KEY = os.getenv('RECAPTCHA_SECRET_KEY')
+CLOUDFLARE_API_TOKEN = os.getenv('CLOUDFLARE_API_TOKEN')
+CLOUDFLARE_IMAGE_URL = os.getenv('CLOUDFLARE_IMAGE_URL')
 
 
 @auth_bp.route('/signup', methods=['POST'])
@@ -130,11 +134,65 @@ def complete_profile():
         if not user:
             return jsonify({'error': 'User not found'}), 404
             
-        user.update_profile(username, password)
+        user.complete_profile(username, password)
         db.session.commit()
         
         return jsonify({
             'message': 'Profile completed successfully',
+            'user': user.to_dict()
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+    
+@auth_bp.route('/update-profile', methods=['PUT'])
+@jwt_required()
+def update_profile():
+    """Update user profile information (username and profile picture)"""
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        username = request.form.get('username')
+        profile_picture_file = request.files.get('profile_picture')
+        
+        # At least one field should be provided
+        if username is None and profile_picture_file is None:
+            return jsonify({'error': 'At least one field (username or profile_picture) is required'}), 400
+            
+        # Check if username is being changed and if it already exists
+        if username is not None:
+            existing_user = User.query.filter_by(username=username).first()
+            if existing_user and existing_user.email != email:
+                return jsonify({'error': 'Username already exists'}), 400
+        
+        # Handle profile picture upload
+        profile_picture_path = None
+        if profile_picture_file and profile_picture_file.filename != '':
+            if not allowed_file(profile_picture_file.filename):
+                return jsonify({'error': 'Invalid file type. Allowed types: png, jpg, jpeg, gif, webp'}), 400
+            
+            headers = {
+                "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}"
+               }
+            files = {
+                "file": (profile_picture_file.filename, profile_picture_file.stream, profile_picture_file.content_type)
+            }
+            response = requests.post(CLOUDFLARE_IMAGE_URL, headers=headers, files=files)
+            if response.status_code == 200:
+                delete_previous_image(user.profile_picture)
+                profile_picture_path = response.json()['result']['variants'][0]
+            else:
+                return jsonify({'error': 'Image upload failed'}), 400
+            
+        user.update_profile(username=username, profile_picture=profile_picture_path)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Profile updated successfully',
             'user': user.to_dict()
         }), 200
     except Exception as e:
@@ -281,4 +339,83 @@ def delete_user(id):
     except Exception as e:
         print(e)
         db.session.rollback()
+        return jsonify({'error': 'Internal server error'}), 500
+
+@auth_bp.route('/creator-data', methods=['GET'])
+@jwt_required()
+@creator_required
+def get_creator_data():
+    """Get comprehensive creator data including videos, blogs, likes, views, etc."""
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        # Get all videos by the creator
+        videos = Video.query.filter_by(created_by=user.id).all()
+        
+        # Get all blogs by the creator
+        blogs = Blog.query.filter_by(created_by=user.id).all()
+        
+        # Calculate video statistics
+        total_videos = len(videos)
+        published_videos = len([v for v in videos if v.status == VideoStatus.PUBLISHED])
+        draft_videos = len([v for v in videos if v.status == VideoStatus.DRAFT])
+        pending_videos = len([v for v in videos if v.status == VideoStatus.PENDING_APPROVAL])
+        rejected_videos = len([v for v in videos if v.status == VideoStatus.REJECTED])
+        archived_videos = len([v for v in videos if v.archived])
+        
+        # Calculate blog statistics
+        total_blogs = len(blogs)
+        published_blogs = len([b for b in blogs if b.status == BlogStatus.PUBLISHED])
+        draft_blogs = len([b for b in blogs if b.status == BlogStatus.DRAFT])
+        pending_blogs = len([b for b in blogs if b.status == BlogStatus.PENDING_APPROVAL])
+        rejected_blogs = len([b for b in blogs if b.status == BlogStatus.REJECTED])
+        archived_blogs = len([b for b in blogs if b.archived])
+        
+        # Calculate total likes and views
+        total_video_likes = sum(video.likes for video in videos)
+        total_video_views = sum(video.views for video in videos)
+        total_video_watch_time = sum(video.total_watch_time for video in videos)
+        
+        total_blog_likes = sum(blog.likes for blog in blogs)
+        total_blog_views = sum(blog.views for blog in blogs)
+        
+        creator_data = {
+            'user': user.to_dict(),
+            'statistics': {
+                'videos': {
+                    'total': total_videos,
+                    'published': published_videos,
+                    'draft': draft_videos,
+                    'pending_approval': pending_videos,
+                    'rejected': rejected_videos,
+                    'archived': archived_videos,
+                    'total_likes': total_video_likes,
+                    'total_views': total_video_views,
+                    'total_watch_time': total_video_watch_time
+                },
+                'blogs': {
+                    'total': total_blogs,
+                    'published': published_blogs,
+                    'draft': draft_blogs,
+                    'pending_approval': pending_blogs,
+                    'rejected': rejected_blogs,
+                    'archived': archived_blogs,
+                    'total_likes': total_blog_likes,
+                    'total_views': total_blog_views
+                },
+                'overall': {
+                    'total_content': total_videos + total_blogs,
+                    'total_likes': total_video_likes + total_blog_likes,
+                    'total_views': total_video_views + total_blog_views
+                }
+            }
+        }
+        
+        return jsonify(creator_data), 200
+        
+    except Exception as e:
         return jsonify({'error': 'Internal server error'}), 500

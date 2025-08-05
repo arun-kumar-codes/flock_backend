@@ -27,6 +27,7 @@ class Video(db.Model):
     archived = db.Column(db.Boolean, default=False)
     likes = db.Column(db.Integer, default=0)
     views = db.Column(db.Integer, default=0)
+    total_watch_time = db.Column(db.Integer, default=0)
     liked_by = db.Column(MutableList.as_mutable(ARRAY(db.Integer)), default=list)
     viewed_by = db.Column(MutableList.as_mutable(ARRAY(db.Integer)), default=list)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -37,6 +38,9 @@ class Video(db.Model):
     
     # Relationship with VideoComment (one-to-many)
     comments = db.relationship('VideoComment', backref='video', lazy=True, cascade='all, delete-orphan')
+    
+    # Relationship with VideoWatchTime (one-to-many)
+    watch_times = db.relationship('VideoWatchTime', backref='video', lazy=True, cascade='all, delete-orphan')
     
     def __init__(self, title, video, created_by, description=None, thumbnail=None, 
                  duration=None, format=None):
@@ -51,6 +55,7 @@ class Video(db.Model):
         self.archived = False
         self.likes = 0
         self.views = 0
+        self.total_watch_time = 0
         self.liked_by = []
         self.viewed_by = []
     
@@ -103,6 +108,38 @@ class Video(db.Model):
             self.viewed_by.append(user_id)
             self.views += 1
     
+    def add_watch_time(self, user_id, watch_time_seconds):
+        """Add watch time from a user"""
+        # Create or update watch time entry
+        watch_time_entry = VideoWatchTime.query.filter_by(
+            video_id=self.id, 
+            user_id=user_id
+        ).first()
+        
+        if watch_time_entry:
+            # Update existing entry
+            watch_time_entry.watch_time += watch_time_seconds
+            watch_time_entry.last_watched = datetime.utcnow()
+        else:
+            # Create new entry
+            watch_time_entry = VideoWatchTime(
+                video_id=self.id,
+                user_id=user_id,
+                watch_time=watch_time_seconds
+            )
+            db.session.add(watch_time_entry)
+        
+        # Update total watch time for the video
+        self.total_watch_time += watch_time_seconds
+    
+    def get_user_watch_time(self, user_id):
+        """Get watch time for a specific user"""
+        watch_time_entry = VideoWatchTime.query.filter_by(
+            video_id=self.id, 
+            user_id=user_id
+        ).first()
+        return watch_time_entry.watch_time if watch_time_entry else 0
+    
     def is_liked_by(self, user_id):
         """Check if video is liked by a specific user"""
         return user_id in self.liked_by
@@ -123,22 +160,29 @@ class Video(db.Model):
         else:
             return f"{minutes:02d}:{seconds:02d}"
     
+    def format_watch_time(self, seconds):
+        """Format watch time in HH:MM:SS format"""
+        if not seconds:
+            return "00:00"
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        seconds_remainder = seconds % 60
+        if hours > 0:
+            return f"{hours:02d}:{minutes:02d}:{seconds_remainder:02d}"
+        else:
+            return f"{minutes:02d}:{seconds_remainder:02d}"
     
     def to_dict(self, user_id=None):
         """Convert video to dictionary"""
-        # Base URL for the backend
-        base_url = os.getenv('BACKEND_URL')
-        
-        # Prepend base URL to video and thumbnail paths if they exist
-        video_url = f"{base_url}/{self.video}" if self.video else None
-        thumbnail_url = f"{base_url}/{self.thumbnail}" if self.thumbnail else None
-        
+        video_id = self.video.strip().split("/")[-2] if self.video else None
+
         return {
             'id': self.id,
+            'video_id': video_id,
             'title': self.title,
             'description': self.description,
-            'video': video_url,
-            'thumbnail': thumbnail_url,
+            'video': self.video,
+            'thumbnail': self.thumbnail,
             'duration': self.duration,
             'duration_formatted': self.format_duration(),
             'format': self.format,
@@ -146,6 +190,10 @@ class Video(db.Model):
             'archived': self.archived,
             'likes': self.likes,
             'views': self.views,
+            'total_watch_time': self.total_watch_time,
+            'total_watch_time_formatted': self.format_watch_time(self.total_watch_time),
+            'user_watch_time': self.get_user_watch_time(user_id) if user_id else 0,
+            'user_watch_time_formatted': self.format_watch_time(self.get_user_watch_time(user_id)) if user_id else "00:00",
             'liked_by': self.liked_by,
             'viewed_by': self.viewed_by,
             'is_liked': self.is_liked_by(user_id) if user_id else False,
@@ -159,6 +207,40 @@ class Video(db.Model):
     
     def __repr__(self):
         return f'<Video {self.title}>'
+
+
+class VideoWatchTime(db.Model):
+    __tablename__ = 'video_watch_times'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    video_id = db.Column(db.Integer, db.ForeignKey('videos.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    watch_time = db.Column(db.Integer, default=0)
+    last_watched = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationship with User (viewer)
+    viewer = db.relationship('User', backref=db.backref('video_watch_times', lazy=True))
+    
+    def __init__(self, video_id, user_id, watch_time=0):
+        self.video_id = video_id
+        self.user_id = user_id
+        self.watch_time = watch_time
+        self.last_watched = datetime.utcnow()
+    
+    def to_dict(self):
+        """Convert watch time entry to dictionary"""
+        return {
+            'id': self.id,
+            'video_id': self.video_id,
+            'user_id': self.user_id,
+            'watch_time': self.watch_time,
+            'watch_time_formatted': self.video.format_watch_time(self.watch_time) if self.video else "00:00",
+            'last_watched': self.last_watched.isoformat() if self.last_watched else None,
+            'viewer': self.viewer.to_dict() if self.viewer else None
+        }
+    
+    def __repr__(self):
+        return f'<VideoWatchTime {self.id}>'
 
 
 class VideoComment(db.Model):

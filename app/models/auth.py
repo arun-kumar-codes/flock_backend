@@ -17,6 +17,7 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True, nullable=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=True)
+    profile_picture = db.Column(db.String(500), nullable=True)
     role = db.Column(db.Enum(UserRole), default=UserRole.VIEWER, nullable=False)
     
     def __init__(self, username=None, email=None, password=None, role=UserRole.VIEWER):
@@ -41,10 +42,17 @@ class User(db.Model):
         """Check if user has completed their profile (username, email and password)"""
         return self.username is not None and self.password_hash is not None
     
-    def update_profile(self, username, password):
-        """Update user profile with username and password"""
+    def complete_profile(self, username, password):
+        """Complete user profile with username and password (initial profile setup)"""
         self.username = username
         self.password_hash = self._hash_password(password)
+    
+    def update_profile(self, username=None, profile_picture=None):
+        """Update user profile information (username and profile picture)"""
+        if username is not None:
+            self.username = username
+        if profile_picture is not None:
+            self.profile_picture = profile_picture
     
     def to_dict(self):
         """Convert user to dictionary (excluding password)"""
@@ -52,6 +60,7 @@ class User(db.Model):
             'id': self.id,
             'username': self.username,
             'email': self.email,
+            'profile_picture': self.profile_picture,
             'role': self.role.value
         }
     

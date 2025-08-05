@@ -1,4 +1,8 @@
 import subprocess
+from datetime import datetime, timedelta
+
+from flask import jsonify
+from app.models import Video, VideoStatus
 
 def get_video_duration(file_path):
     """Extract video duration using ffprobe"""
@@ -16,3 +20,29 @@ def get_video_duration(file_path):
     except (subprocess.CalledProcessError, ValueError, FileNotFoundError):
         # Return None if ffprobe is not available or fails
         return None
+    
+def transcode_video(file_path, transcoded_path):
+    try:
+        subprocess.run([
+                        "ffmpeg", "-i", file_path,
+                        "-c:v", "libx264", "-preset", "fast",
+                        "-c:a", "aac", "-b:a", "128k",
+                        "-movflags", "+faststart",
+                        transcoded_path
+                    ], check=True)
+    except subprocess.CalledProcessError:
+        return jsonify({'error': 'Video transcoding failed'}), 400
+    
+def get_trending_videos():
+    try:
+        trending_videos = Video.query.filter(
+            Video.archived == False,
+            Video.status == VideoStatus.PUBLISHED,
+            Video.created_at > datetime.utcnow() - timedelta(days=7),
+            Video.views >= 1,
+            Video.likes >= 1
+        ).order_by(Video.views.desc()).limit(10).all()
+        return trending_videos
+    except Exception as e:
+        print(f"Error getting trending videos: {e}")
+        return []

@@ -1,15 +1,17 @@
 import os
-import time
-from werkzeug.utils import secure_filename
-from flask import Blueprint, request, jsonify, current_app
+import requests
+
+from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from app import db
 from app.models import Blog, User, BlogStatus, Comment, UserRole
-from app.utils import creator_required, allowed_file, admin_required
+from app.utils import creator_required, allowed_file, admin_required, delete_previous_image, get_trending_blogs
 
 blog_bp = Blueprint('blog', __name__)
 
+CLOUDFLARE_API_TOKEN = os.getenv('CLOUDFLARE_API_TOKEN')
+CLOUDFLARE_IMAGE_URL = os.getenv('CLOUDFLARE_IMAGE_URL')
 
 @blog_bp.route('/create', methods=['POST'])
 @jwt_required()
@@ -36,22 +38,17 @@ def create_blog():
             if not allowed_file(image_file.filename):
                 return jsonify({'error': 'Invalid file type. Allowed types: png, jpg, jpeg, gif, webp'}), 400
             
-            # Create upload directory if it doesn't exist
-            upload_folder = os.path.join(current_app.root_path, 'static', 'uploads', 'blogs')
-            os.makedirs(upload_folder, exist_ok=True)
-            
-            # Secure the filename and save the file
-            filename = secure_filename(image_file.filename)
-            
-            timestamp = int(time.time())
-            filename = f"{timestamp}_{filename}"
-            
-            file_path = os.path.join(upload_folder, filename)
-            image_file.save(file_path)
-            
-            # Store the relative path for database
-            image_path = f"static/uploads/blogs/{filename}"
-        
+            headers = {
+                "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}"
+            }
+            files = {
+                "file": (image_file.filename, image_file.stream, image_file.content_type)
+            }
+            response = requests.post(CLOUDFLARE_IMAGE_URL, headers=headers, files=files)
+            if response.status_code == 200:
+                image_path = response.json()['result']['variants'][0]
+            else:
+                return jsonify({'error': 'Image upload failed'}), 400
         # Create new blog with draft status and not archived
         blog = Blog(
             title=title,
@@ -115,20 +112,19 @@ def update_blog(blog_id):
             if not allowed_file(image_file.filename):
                 return jsonify({'error': 'Invalid file type. Allowed types: png, jpg, jpeg, gif, webp'}), 400
             
-            # Create upload directory if it doesn't exist
-            upload_folder = os.path.join(current_app.root_path, 'static', 'uploads', 'blogs')
-            os.makedirs(upload_folder, exist_ok=True)
-            
-            # Secure the filename and save the file
-            filename = secure_filename(image_file.filename)
-            timestamp = int(time.time())
-            filename = f"{timestamp}_{filename}"
-            
-            file_path = os.path.join(upload_folder, filename)
-            image_file.save(file_path)
-            
-            # Store the relative path for database
-            blog.image = f"static/uploads/blogs/{filename}"
+            headers = {
+                "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}"
+               }
+            files = {
+                "file": (image_file.filename, image_file.stream, image_file.content_type)
+                }
+            response = requests.post(CLOUDFLARE_IMAGE_URL, headers=headers, files=files)
+            if response.status_code == 200:
+                image_path = response.json()['result']['variants'][0]
+                delete_previous_image(blog.image)
+                blog.image = image_path
+            else:
+                return jsonify({'error': 'Image upload failed'}), 400
         
         # If blog was rejected and is being updated, change status back to draft
         if blog.status == BlogStatus.REJECTED:
@@ -355,6 +351,40 @@ def get_blog(blog_id):
         return jsonify({'error': 'Internal server error'}), 500
 
 
+@blog_bp.route('/<int:blog_id>/view', methods=['POST'])
+@jwt_required()
+def add_blog_view(blog_id):
+    """Add a view to a blog by a user"""
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        blog = Blog.query.get(blog_id)
+        if not blog:
+            return jsonify({'error': 'Blog not found'}), 404
+        
+        if blog.status != BlogStatus.PUBLISHED:
+            return jsonify({'error': 'Only published blogs can be viewed'}), 400
+        
+        if blog.archived:
+            return jsonify({'error': 'Blog not available'}), 404
+        
+        blog.add_view(user.id)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'View added successfully',
+            'views': blog.views,
+            'is_viewed': blog.is_viewed_by(user.id)
+        }), 200
+        
+    except Exception as e:
+        print(e)
+        return jsonify({'error': 'Internal server error'}), 500
+
+
 @blog_bp.route('/get-all', methods=['GET'])
 @jwt_required()
 def get_all_blogs():
@@ -365,6 +395,12 @@ def get_all_blogs():
         
         # Get query parameters
         status_filter = request.args.get('status')
+        trending = request.args.get('trending')
+        if trending:
+            trending_blogs = get_trending_blogs()
+            return jsonify({
+                'blogs': [blog.to_dict(user.id if user else None) for blog in trending_blogs]
+            }), 200
         
         # Build query - exclude archived blogs and draft blogs
         query = Blog.query.filter_by(archived=False).filter(Blog.status != BlogStatus.DRAFT)

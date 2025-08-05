@@ -25,6 +25,8 @@ class Blog(db.Model):
     archived = db.Column(db.Boolean, default=False)
     likes = db.Column(db.Integer, default=0)
     liked_by = db.Column(MutableList.as_mutable(ARRAY(db.Integer)), default=list)
+    views = db.Column(db.Integer, default=0)
+    viewed_by = db.Column(MutableList.as_mutable(ARRAY(db.Integer)), default=list)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     
@@ -43,6 +45,8 @@ class Blog(db.Model):
         self.archived = False
         self.likes = 0
         self.liked_by = []
+        self.views = 0
+        self.viewed_by = []
     
     def send_for_approval(self):
         """Send blog for admin approval"""
@@ -91,21 +95,32 @@ class Blog(db.Model):
         """Check if blog is liked by a specific user"""
         return user_id in self.liked_by
     
+    def add_view(self, user_id):
+        """Add a view from a user"""
+        if user_id not in self.viewed_by:
+            self.viewed_by.append(user_id)
+            self.views += 1
+    
+    def is_viewed_by(self, user_id):
+        """Check if blog is viewed by a specific user"""
+        return user_id in self.viewed_by
+    
     def to_dict(self, user_id=None):
         """Convert blog to dictionary"""
-        base_url = os.getenv('BACKEND_URL')
-        image_url = f"{base_url}/{self.image}" if self.image else None
 
         return {
             'id': self.id,
             'title': self.title,
             'content': self.content,
-            'image': image_url,
+            'image': self.image,
             'status': self.status.value if self.status else None,
             'archived': self.archived,
             'likes': self.likes,
             'liked_by': self.liked_by,
+            'views': self.views,
+            'viewed_by': self.viewed_by,
             'is_liked': self.is_liked_by(user_id) if user_id else False,
+            'is_viewed': self.is_viewed_by(user_id) if user_id else False,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'created_by': self.created_by,
             'author': self.author.to_dict() if self.author else None,

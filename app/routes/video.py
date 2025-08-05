@@ -1,15 +1,19 @@
 import os
-import time
-from werkzeug.utils import secure_filename
-from flask import Blueprint, request, jsonify, current_app
+import requests
+import tempfile
+from datetime import datetime
+from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from app import db
-from app.models import Video, User, VideoStatus, VideoComment, UserRole
-from app.utils import creator_required, allowed_file, admin_required, get_video_duration
+from app.models import Video, User, VideoStatus, VideoComment, VideoWatchTime, UserRole
+from app.utils import creator_required, admin_required, get_video_duration, transcode_video, get_trending_videos
 
 video_bp = Blueprint('video', __name__)
 
+
+CLOUDFLARE_API_TOKEN = os.getenv('CLOUDFLARE_API_TOKEN')
+CLOUDFLARE_STREAM_URL = os.getenv('CLOUDFLARE_STREAM_URL')
 
 
 @video_bp.route('/create', methods=['POST'])
@@ -20,115 +24,84 @@ def create_video():
     try:
         email = get_jwt_identity()
         user = User.query.filter_by(email=email).first()
-        
+        video_file = request.files.get('video')
         title = request.form.get('title')
-        description = request.form.get('description')
-        video = request.files.get('video')
-        thumbnail = request.files.get('thumbnail')
-        
-        if not title or not video:
-            return jsonify({'error': 'Title and video file are required'}), 400
-        
+
+        if not video_file or not title:
+            return jsonify({'error': 'Missing title or video'}), 400
         if len(title) > 200:
-            return jsonify({'error': 'Title must be less than 200 characters'}), 400
-        
+            return jsonify({'error': 'Title must be less than 200 characters'}), 400 
+       
         # Check if user has already uploaded 5 videos
-        user_videos_count = Video.query.filter_by(created_by=user.id).count()
-        if user_videos_count >= 5:
-            return jsonify({'error': 'You can only upload a maximum of 5 videos'}), 400
-        
-        # Handle video upload
-        if video.filename == '':
-            return jsonify({'error': 'No video file selected'}), 400
+        # user_videos_count = Video.query.filter_by(created_by=user.id).count()
+        # if user_videos_count >= 5:
+        #     return jsonify({'error': 'You can only upload a maximum of 5 videos'}), 400
         
         # Check if video file type is allowed
         allowed_video_types = {'mp4', 'mov'}
-        if not video.filename.lower().split('.')[-1] in allowed_video_types:
+        ext = video_file.filename.lower().split('.')[-1]
+        if ext not in allowed_video_types:
             return jsonify({'error': 'Invalid video file type, allowed types: mp4, mov'}), 400
-        
-        # Create upload directory if it doesn't exist
-        upload_folder = os.path.join(current_app.root_path, 'static', 'uploads', 'videos')
-        os.makedirs(upload_folder, exist_ok=True)
-        
-        # Secure the filename
-        filename = secure_filename(video.filename)
-        timestamp = int(time.time())
-        filename = f"{timestamp}_{filename}"
-        file_path = os.path.join(upload_folder, filename)
-        
-        # Save video file temporarily to check duration and size
-        video.save(file_path)
-        
-        # Get video format
-        format_type = filename.split('.')[-1].upper()
-        
-        # Get video duration
-        duration = get_video_duration(file_path)
-        
-        # Check video duration (10 minutes = 600 seconds)
-        if duration and duration > 600:
-            # Remove the file if duration is too long
-            os.remove(file_path)
-            return jsonify({'error': 'Video duration must be less than 10 minutes'}), 400
-        
-        # Check file size (250 MB = 250 * 1024 * 1024 bytes)
-        file_size = os.path.getsize(file_path)
-        max_file_size = 250 * 1024 * 1024  # 250 MB in bytes
-        if file_size > max_file_size:
-            # Remove the file if size is too large
-            os.remove(file_path)
-            return jsonify({'error': 'Video file size must be less than 250 MB'}), 400
-        
-        # Store the relative path for database
-        video_path = f"static/uploads/videos/{filename}"
-        
-        # Handle thumbnail upload
-        thumbnail_url = None
-        if thumbnail and thumbnail.filename != '':
-            if not allowed_file(thumbnail.filename):
-                return jsonify({'error': 'Invalid thumbnail file type. Allowed types: png, jpg, jpeg, gif, webp'}), 400
-            
-            # Create thumbnail upload directory if it doesn't exist
-            thumbnail_folder = os.path.join(current_app.root_path, 'static', 'uploads', 'thumbnails')
-            os.makedirs(thumbnail_folder, exist_ok=True)
-            
-            # Secure the filename and save the thumbnail file
-            thumbnail_filename = secure_filename(thumbnail.filename)
-            thumbnail_filename = f"{timestamp}_{thumbnail_filename}"
-            thumbnail_path = os.path.join(thumbnail_folder, thumbnail_filename)
-            thumbnail.save(thumbnail_path)
-            
-            # Store the relative path for database
-            thumbnail_path = f"static/uploads/thumbnails/{thumbnail_filename}"
-        
-        # Create new video with draft status
-        video = Video(
-            title=title,
-            description=description,
-            video=video_path,
-            thumbnail=thumbnail_path,
-            created_by=user.id,
-            format=format_type,
-            duration=duration
-        )
-        db.session.add(video)
-        db.session.commit()
-        
-        return jsonify({
-            'message': 'Video created successfully',
-            'video': video.to_dict(user.id)
-        }), 201
-        
+
+        # Save uploaded video to a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as temp:
+            video_file.save(temp.name)
+
+            # Validate video duration
+            duration = get_video_duration(temp.name)
+            if duration > 600:
+                return jsonify({'error': 'Video too long (max 10 mins)'}), 400
+            if os.path.getsize(temp.name) > 250 * 1024 * 1024:
+                return jsonify({'error': 'File too large (max 250 MB)'}), 400
+
+            # Transcode with FFmpeg
+            transcoded_path = temp.name.replace(f".{ext}", "_transcoded.mp4")
+            transcode_video(temp.name, transcoded_path)
+
+            # Custom filename: username_datetime
+            now_str = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            clean_username = ''.join(c for c in user.username if c.isalnum() or c in ('-', '_'))
+            upload_filename = f"{clean_username}_{now_str}.{ext}"
+
+            # Upload to Cloudflare Stream
+            with open(transcoded_path, 'rb') as f:
+                response = requests.post(
+                    CLOUDFLARE_STREAM_URL,
+                    headers={
+                        "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}"
+                    },
+                    files={"file": (upload_filename, f)}
+                )
+
+            if response.status_code != 200:
+                return jsonify({'error': 'Video Upload failed'}), 400
+
+            cloudflare_data = response.json()
+            playback_url = f"https://videodelivery.net/{cloudflare_data['result']['uid']}/watch"
+
+            # Save video info to DB
+            video = Video(
+                title=title,
+                description=request.form.get('description'),
+                duration=duration,
+                video=playback_url,
+                thumbnail=cloudflare_data['result']['thumbnail'],
+                created_by=user.id
+            )
+            db.session.add(video)
+            db.session.commit()
+
+        return jsonify({'message': 'Video uploaded successfully', 'url': playback_url}), 201
+
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': 'Internal server error'}), 500
-
+        return jsonify({'error': str(e)}), 500
 
 @video_bp.route('/<int:video_id>', methods=['PATCH'])
 @jwt_required()
 @creator_required
 def update_video(video_id):
-    """Update a video (title, description, thumbnail) - only draft or rejected videos"""
+    """Update a video (title, description) - only draft or rejected videos"""
     try:
         email = get_jwt_identity()
         user = User.query.filter_by(email=email).first()
@@ -149,9 +122,8 @@ def update_video(video_id):
             return jsonify({'error': 'Only draft or rejected videos can be updated'}), 400
         
         # Get form data for updates
-        title = request.form.get('title')
-        description = request.form.get('description')
-        thumbnail = request.files.get('thumbnail')
+        title = request.json.get('title')
+        description = request.json.get('description')
         
         # Update fields if provided
         if title:
@@ -161,32 +133,7 @@ def update_video(video_id):
         
         if description is not None:
             video.description = description
-        
-        # Handle thumbnail update
-        if thumbnail and thumbnail.filename != '':
-            if not allowed_file(thumbnail.filename):
-                return jsonify({'error': 'Invalid thumbnail type. Allowed types: png, jpg, jpeg, gif, webp'}), 400
-            
-            # Delete old thumbnail if it exists
-            if video.thumbnail:
-                old_thumbnail_path = os.path.join(current_app.root_path, video.thumbnail)
-                if os.path.exists(old_thumbnail_path):
-                    os.remove(old_thumbnail_path)
-            
-            # Create thumbnail upload directory if it doesn't exist
-            thumbnail_folder = os.path.join(current_app.root_path, 'static', 'uploads', 'thumbnails')
-            os.makedirs(thumbnail_folder, exist_ok=True)
-            
-            # Secure the filename and save the thumbnail file
-            thumbnail_filename = secure_filename(thumbnail.filename)
-            timestamp = int(time.time())
-            thumbnail_filename = f"{timestamp}_{thumbnail_filename}"
-            thumbnail_path = os.path.join(thumbnail_folder, thumbnail_filename)
-            thumbnail.save(thumbnail_path)
-            
-            # Store the relative path for database
-            video.thumbnail = f"static/uploads/thumbnails/{thumbnail_filename}"
-        
+
         if video.status == VideoStatus.REJECTED:
             video.status = VideoStatus.DRAFT
         
@@ -388,6 +335,12 @@ def get_all_videos():
         
         # Get query parameters
         status_filter = request.args.get('status')
+        trending = request.args.get('trending')
+        if trending:
+            trending_videos = get_trending_videos()
+            return jsonify({
+                'videos': [video.to_dict(user.id if user else None) for video in trending_videos]
+            }), 200
         
         # Build query - exclude archived videos and draft videos
         query = Video.query.filter_by(archived=False).filter(Video.status != VideoStatus.DRAFT)
@@ -527,7 +480,7 @@ def edit_video_comment(comment_id):
         if not comment_text:
             return jsonify({'error': 'Comment text is required'}), 400
         
-        if len(new_comment_text.strip()) == 0:
+        if len(comment_text.strip()) == 0:
             return jsonify({'error': 'Comment cannot be empty'}), 400
         
         comment.comment = comment_text.strip()
@@ -540,6 +493,110 @@ def edit_video_comment(comment_id):
         
     except Exception as e:
         db.session.rollback()
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@video_bp.route('/<int:video_id>/view', methods=['POST'])
+@jwt_required()
+def add_video_view(video_id):
+    """Add a view to a video by a user"""
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+        
+        video = Video.query.get(video_id)
+        if not video:
+            return jsonify({'error': 'Video not found'}), 404
+        
+        if video.status != VideoStatus.PUBLISHED:
+            return jsonify({'error': 'Only published videos can be viewed'}), 400
+        
+        # Add view for the user
+        video.add_view(user.id)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'View added successfully',
+            'views': video.views,
+            'is_viewed': video.is_viewed_by(user.id)
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@video_bp.route('/<int:video_id>/watch-time', methods=['POST'])
+@jwt_required()
+def add_video_watch_time(video_id):
+    """Add watch time for a video by a user (only viewers can add watch time)"""
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+        
+        # Only viewers can add watch time
+        if user.role != UserRole.VIEWER:
+            return jsonify({'error': 'Only viewers can add watch time'}), 403
+        
+        video = Video.query.get(video_id)
+        if not video:
+            return jsonify({'error': 'Video not found'}), 404
+        
+        if video.status != VideoStatus.PUBLISHED:
+            return jsonify({'error': 'Only published videos can have watch time'}), 400
+        
+        # Get watch time from request payload
+        watch_time_seconds = request.json.get('watch_time')
+        if not watch_time_seconds or not isinstance(watch_time_seconds, (int, float)) or watch_time_seconds <= 0:
+            return jsonify({'error': 'Valid watch_time (positive number) is required in payload'}), 400
+        
+        # Add watch time to the video
+        video.add_watch_time(user.id, int(watch_time_seconds))
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Watch time added successfully',
+            'total_watch_time': video.total_watch_time,
+            'total_watch_time_formatted': video.format_watch_time(video.total_watch_time),
+            'user_watch_time': video.get_user_watch_time(user.id),
+            'user_watch_time_formatted': video.format_watch_time(video.get_user_watch_time(user.id))
+        }), 200
+        
+    except Exception as e:
+        print(e)
+        db.session.rollback()
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@video_bp.route('/<int:video_id>/watch-time', methods=['GET'])
+@jwt_required()
+def get_video_watch_time(video_id):
+    """Get watch time statistics for a video"""
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+        
+        video = Video.query.get(video_id)
+        if not video:
+            return jsonify({'error': 'Video not found'}), 404
+        
+        if video.status != VideoStatus.PUBLISHED:
+            return jsonify({'error': 'Only published videos can have watch time'}), 400
+        
+        # Get all watch time entries for this video
+        watch_times = VideoWatchTime.query.filter_by(video_id=video_id).all()
+        
+        return jsonify({
+            'video_id': video_id,
+            'total_watch_time': video.total_watch_time,
+            'total_watch_time_formatted': video.format_watch_time(video.total_watch_time),
+            'user_watch_time': video.get_user_watch_time(user.id),
+            'user_watch_time_formatted': video.format_watch_time(video.get_user_watch_time(user.id)),
+            'watch_time_entries': [wt.to_dict() for wt in watch_times],
+            'total_viewers': len(watch_times)
+        }), 200
+        
+    except Exception as e:
         return jsonify({'error': 'Internal server error'}), 500
 
 
