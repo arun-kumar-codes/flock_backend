@@ -2,9 +2,9 @@ from datetime import datetime
 from enum import Enum
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.mutable import MutableList
-import os
-from app import db
 
+from app import db
+from app.models import User
 
 class VideoStatus(Enum):
     DRAFT = 'draft'
@@ -23,14 +23,14 @@ class Video(db.Model):
     thumbnail = db.Column(db.String(500), nullable=True)
     duration = db.Column(db.Integer, nullable=True)
     format = db.Column(db.String(50), nullable=True)
-    status = db.Column(db.Enum(VideoStatus), default=VideoStatus.DRAFT)
-    archived = db.Column(db.Boolean, default=False)
-    likes = db.Column(db.Integer, default=0)
-    views = db.Column(db.Integer, default=0)
+    status = db.Column(db.Enum(VideoStatus), default=VideoStatus.DRAFT, index=True)
+    archived = db.Column(db.Boolean, default=False, index=True)
+    likes = db.Column(db.Integer, default=0, index=True)
+    views = db.Column(db.Integer, default=0, index=True)
     total_watch_time = db.Column(db.Integer, default=0)
     liked_by = db.Column(MutableList.as_mutable(ARRAY(db.Integer)), default=list)
     viewed_by = db.Column(MutableList.as_mutable(ARRAY(db.Integer)), default=list)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     
     # Relationship with User (creator)
@@ -171,6 +171,15 @@ class Video(db.Model):
             return f"{hours:02d}:{minutes:02d}:{seconds_remainder:02d}"
         else:
             return f"{minutes:02d}:{seconds_remainder:02d}"
+        
+    def is_following_creator(self, user_id):
+        """Check if a user is following the video creator"""
+        if not user_id or not self.creator:
+            return False
+        requesting_user = User.query.get(user_id)
+        if not requesting_user:
+            return False
+        return requesting_user.is_following(self.creator)
     
     def to_dict(self, user_id=None):
         """Convert video to dictionary"""
@@ -198,6 +207,7 @@ class Video(db.Model):
             'viewed_by': self.viewed_by,
             'is_liked': self.is_liked_by(user_id) if user_id else False,
             'is_viewed': self.is_viewed_by(user_id) if user_id else False,
+            'is_following': self.is_following_creator(user_id) if user_id else False,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'created_by': self.created_by,
             'creator': self.creator.to_dict() if self.creator else None,

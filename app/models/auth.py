@@ -1,7 +1,7 @@
 import bcrypt
 from enum import Enum
 from datetime import datetime
-
+from sqlalchemy import Table, Column, Integer, ForeignKey, DateTime
 from app import db
 
 
@@ -9,6 +9,13 @@ class UserRole(Enum):
     CREATOR = "Creator"
     VIEWER = "Viewer"
     ADMIN = "Admin"
+    
+followers = Table('followers',
+    db.metadata,
+    Column('follower_id', Integer, ForeignKey('users.id'), primary_key=True),
+    Column('followed_id', Integer, ForeignKey('users.id'), primary_key=True),
+    Column('created_at', DateTime, default=datetime.utcnow)
+)
 
 class User(db.Model):
     __tablename__ = 'users'
@@ -19,6 +26,14 @@ class User(db.Model):
     password_hash = db.Column(db.String(255), nullable=True)
     profile_picture = db.Column(db.String(500), nullable=True)
     role = db.Column(db.Enum(UserRole), default=UserRole.VIEWER, nullable=False)
+    following = db.relationship(
+        'User', 
+        secondary=followers,
+        primaryjoin=(followers.c.follower_id == id),
+        secondaryjoin=(followers.c.followed_id == id),
+        backref=db.backref('followers', lazy='dynamic'),
+        lazy='dynamic'
+    )
     
     def __init__(self, username=None, email=None, password=None, role=UserRole.VIEWER):
         self.username = username
@@ -53,6 +68,46 @@ class User(db.Model):
             self.username = username
         if profile_picture is not None:
             self.profile_picture = profile_picture
+            
+    def follow(self, user):
+        """Follow another user"""
+        if not self.is_following(user):
+            self.following.append(user)
+            return True
+        return False
+    
+    def unfollow(self, user):
+        """Unfollow another user"""
+        if self.is_following(user):
+            self.following.remove(user)
+            return True
+        return False
+    
+    def is_following(self, user):
+        """Check if this user is following another user"""
+        return self.following.filter(followers.c.followed_id == user.id).count() > 0
+    
+    def get_followers_count(self):
+        """Get number of followers"""
+        return self.followers.count()
+    
+    def get_following_count(self):
+        """Get number of users being followed"""
+        return self.following.count()
+    
+    def get_followers(self, limit=None):
+        """Get list of followers"""
+        query = self.followers
+        if limit:
+            query = query.limit(limit)
+        return query.all()
+    
+    def get_following(self, limit=None):
+        """Get list of users being followed"""
+        query = self.following
+        if limit:
+            query = query.limit(limit)
+        return query.all()
     
     def to_dict(self):
         """Convert user to dictionary (excluding password)"""
@@ -61,7 +116,9 @@ class User(db.Model):
             'username': self.username,
             'email': self.email,
             'profile_picture': self.profile_picture,
-            'role': self.role.value
+            'role': self.role.value,
+            'followers_count': self.get_followers_count(),
+            'following_count': self.get_following_count()
         }
     
     def __repr__(self):

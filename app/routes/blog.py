@@ -4,7 +4,7 @@ import requests
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
-from app import db
+from app import db, cache
 from app.models import Blog, User, BlogStatus, Comment, UserRole
 from app.utils import creator_required, allowed_file, admin_required, delete_previous_image, get_trending_blogs
 
@@ -58,6 +58,7 @@ def create_blog():
         )
         db.session.add(blog)
         db.session.commit()
+        cache.delete_pattern("get_all_blogs:*")
         
         return jsonify({
             'message': 'Blog created successfully',
@@ -131,7 +132,7 @@ def update_blog(blog_id):
             blog.status = BlogStatus.DRAFT
         
         db.session.commit()
-        
+        cache.delete_pattern("get_all_blogs:*")
         return jsonify({
             'message': 'Blog updated successfully',
             'blog': blog.to_dict(user.id)
@@ -165,6 +166,7 @@ def approve_blog(blog_id):
         # Approve the blog
         if blog.approve():
             db.session.commit()
+            cache.delete_pattern("get_all_blogs:*")
             return jsonify({
                 'message': 'Blog approved successfully',
                 'blog': blog.to_dict(user.id)
@@ -200,6 +202,7 @@ def reject_blog(blog_id):
         # Reject the blog
         if blog.reject():
             db.session.commit()
+            cache.delete_pattern("get_all_blogs:*")
             return jsonify({
                 'message': 'Blog rejected successfully',
                 'blog': blog.to_dict(user.id)
@@ -239,6 +242,7 @@ def archive_blog(blog_id):
         # Archive the blog
         if blog.archive():
             db.session.commit()
+            cache.delete_pattern("get_all_blogs:*")
             return jsonify({
                 'message': 'Blog archived successfully',
                 'blog': blog.to_dict(user.id)
@@ -278,6 +282,7 @@ def unarchive_blog(blog_id):
         # Unarchive the blog
         if blog.unarchive():
             db.session.commit()
+            cache.delete_pattern("get_all_blogs:*")
             return jsonify({
                 'message': 'Blog unarchived successfully',
                 'blog': blog.to_dict(user.id)
@@ -317,6 +322,7 @@ def send_blog_for_approval(blog_id):
         # Send for approval
         if blog.send_for_approval():
             db.session.commit()
+            cache.delete_pattern("get_all_blogs:*")
             return jsonify({
                 'message': 'Blog sent for approval successfully',
                 'blog': blog.to_dict(user.id)
@@ -373,7 +379,7 @@ def add_blog_view(blog_id):
         
         blog.add_view(user.id)
         db.session.commit()
-        
+        cache.delete_pattern("get_all_blogs:*")
         return jsonify({
             'message': 'View added successfully',
             'views': blog.views,
@@ -387,8 +393,9 @@ def add_blog_view(blog_id):
 
 @blog_bp.route('/get-all', methods=['GET'])
 @jwt_required()
+@cache.cached(timeout=600, key_prefix=lambda: f"get_all_blogs:{request.full_path}")
 def get_all_blogs():
-    """Get all blogs with optional status filtering"""
+    """Get all blogs with optional filtering"""
     try:
         email = get_jwt_identity()
         user = User.query.filter_by(email=email).first()
@@ -396,14 +403,18 @@ def get_all_blogs():
         # Get query parameters
         status_filter = request.args.get('status')
         trending = request.args.get('trending')
+        creator_id = request.args.get('creator_id')
         if trending:
             trending_blogs = get_trending_blogs()
             return jsonify({
                 'blogs': [blog.to_dict(user.id if user else None) for blog in trending_blogs]
             }), 200
         
+        
         # Build query - exclude archived blogs and draft blogs
         query = Blog.query.filter_by(archived=False).filter(Blog.status != BlogStatus.DRAFT)
+        if creator_id:
+            query = query.filter_by(created_by=creator_id)
         
         # Apply status filter if provided
         if status_filter:
@@ -471,7 +482,7 @@ def toggle_like_blog(blog_id):
             action = 'liked'
         
         db.session.commit()
-        
+        cache.delete_pattern("get_all_blogs:*")
         return jsonify({
             'message': f'Blog {action} successfully',
             'blog': blog.to_dict(user.id),
@@ -517,7 +528,7 @@ def create_comment(blog_id):
         )
         db.session.add(comment)
         db.session.commit()
-        
+        cache.delete_pattern("get_all_blogs:*")
         return jsonify({
             'message': 'Comment created successfully',
             'comment': comment.to_dict()
@@ -557,7 +568,7 @@ def edit_comment(comment_id):
         # Update the comment
         comment.comment = new_comment_text.strip()
         db.session.commit()
-        
+        cache.delete_pattern("get_all_blogs:*")
         return jsonify({
             'message': 'Comment updated successfully',
             'comment': comment.to_dict()
@@ -590,7 +601,7 @@ def delete_comment(comment_id):
         # Delete the comment
         db.session.delete(comment)
         db.session.commit()
-        
+        cache.delete_pattern("get_all_blogs:*")
         return jsonify({
             'message': 'Comment deleted successfully'
         }), 200

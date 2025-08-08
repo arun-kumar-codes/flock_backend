@@ -1,16 +1,14 @@
-import base64
 import os
 from firebase_admin import auth as firebase_auth
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, create_refresh_token, jwt_required, get_jwt_identity
 import requests
-from sqlalchemy import func
 
 from app import db
 from app.models import User, UserRole, Invitation, Video, Blog, VideoStatus, BlogStatus
 from app.utils import admin_required, creator_required
 from app.utils.blog import allowed_file, delete_previous_image
-from firebase_setup import *
+import firebase_setup
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -416,6 +414,130 @@ def get_creator_data():
         }
         
         return jsonify(creator_data), 200
+        
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@auth_bp.route('/follow/<int:user_id>', methods=['POST'])
+@jwt_required()
+def follow_user(user_id):
+    """Follow a user/creator"""
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        # Get the user to follow
+        user_to_follow = User.query.get(user_id)
+        
+        if not user_to_follow:
+            return jsonify({'error': 'User to follow not found'}), 404
+        
+        # Check if trying to follow self
+        if user.id == user_id:
+            return jsonify({'error': 'Cannot follow yourself'}), 400
+        
+        # Check if already following
+        if user.is_following(user_to_follow):
+            return jsonify({'error': 'Already following this user'}), 400
+        
+        # Follow the user
+        success = user.follow(user_to_follow)
+        
+        if success:
+            db.session.commit()
+            return jsonify({
+                'message': f'Successfully followed {user_to_follow.username}',
+                'followed_user': user_to_follow.to_dict(),
+            }), 200
+        else:
+            return jsonify({'error': 'Failed to follow user'}), 400
+            
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Internal server error'}), 500
+
+@auth_bp.route('/unfollow/<int:user_id>', methods=['POST'])
+@jwt_required()
+def unfollow_user(user_id):
+    """Unfollow a user/creator"""
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+        
+        if not user:
+            return jsonify({'error': 'Current user not found'}), 404
+        
+        # Get the user to unfollow
+        user_to_unfollow = User.query.get(user_id)
+        
+        if not user_to_unfollow:
+            return jsonify({'error': 'User to unfollow not found'}), 404
+        
+        # Check if trying to unfollow self
+        if user.id == user_id:
+            return jsonify({'error': 'Cannot unfollow yourself'}), 400
+        
+        # Check if not following
+        if not user.is_following(user_to_unfollow):
+            return jsonify({'error': 'Not following this user'}), 400
+        
+        # Unfollow the user
+        success = user.unfollow(user_to_unfollow)
+        
+        if success:
+            db.session.commit()
+            return jsonify({
+                'message': f'Successfully unfollowed {user_to_unfollow.username}',
+                'unfollowed_user': user_to_unfollow.to_dict()
+            }), 200
+        else:
+            return jsonify({'error': 'Failed to unfollow user'}), 400
+            
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Internal server error'}), 500
+
+@auth_bp.route('/followers', methods=['GET'])
+@jwt_required()
+def get_user_followers():
+    """Get followers of a user"""
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        followers = user.get_followers()
+        
+        return jsonify({
+            'followers': [follower.to_dict() for follower in followers],
+            'followers_count': user.get_followers_count()
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@auth_bp.route('/following', methods=['GET'])
+@jwt_required()
+def get_user_following():
+    """Get users that a user is following"""
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        following = user.get_following()
+        
+        return jsonify({
+            'following': [followed.to_dict() for followed in following],
+            'following_count': user.get_following_count()
+        }), 200
         
     except Exception as e:
         return jsonify({'error': 'Internal server error'}), 500

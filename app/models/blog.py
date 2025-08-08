@@ -2,9 +2,9 @@ from datetime import datetime
 from enum import Enum
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.mutable import MutableList
-import os
 
 from app import db
+from app.models import User
 
 
 class BlogStatus(Enum):
@@ -21,13 +21,13 @@ class Blog(db.Model):
     title = db.Column(db.String(200), nullable=False)
     content = db.Column(db.Text, nullable=False)
     image = db.Column(db.String(500), nullable=True)
-    status = db.Column(db.Enum(BlogStatus), default=BlogStatus.DRAFT)
-    archived = db.Column(db.Boolean, default=False)
-    likes = db.Column(db.Integer, default=0)
+    status = db.Column(db.Enum(BlogStatus), default=BlogStatus.DRAFT, index=True)
+    archived = db.Column(db.Boolean, default=False, index=True)
+    likes = db.Column(db.Integer, default=0, index=True)
     liked_by = db.Column(MutableList.as_mutable(ARRAY(db.Integer)), default=list)
-    views = db.Column(db.Integer, default=0)
+    views = db.Column(db.Integer, default=0, index=True)
     viewed_by = db.Column(MutableList.as_mutable(ARRAY(db.Integer)), default=list)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     
     # Relationship with User (author)
@@ -105,6 +105,15 @@ class Blog(db.Model):
         """Check if blog is viewed by a specific user"""
         return user_id in self.viewed_by
     
+    def is_following_author(self, user_id):
+        """Check if a user is following the blog author"""
+        if not user_id or not self.author:
+            return False
+        requesting_user = User.query.get(user_id)
+        if not requesting_user:
+            return False
+        return requesting_user.is_following(self.author)
+
     def to_dict(self, user_id=None):
         """Convert blog to dictionary"""
 
@@ -121,6 +130,7 @@ class Blog(db.Model):
             'viewed_by': self.viewed_by,
             'is_liked': self.is_liked_by(user_id) if user_id else False,
             'is_viewed': self.is_viewed_by(user_id) if user_id else False,
+            'is_following_author': self.is_following_author(user_id) if user_id else False,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'created_by': self.created_by,
             'author': self.author.to_dict() if self.author else None,
