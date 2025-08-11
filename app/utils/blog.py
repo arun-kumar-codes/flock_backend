@@ -1,6 +1,7 @@
 import requests
 import os
 from datetime import datetime, timedelta
+from app import cache
 from app.models import Blog, BlogStatus
 
 CLOUDFLARE_API_TOKEN = os.getenv('CLOUDFLARE_API_TOKEN')
@@ -38,3 +39,8 @@ def get_trending_blogs():
     except Exception as e:
         print(f"Error getting trending blogs: {e}")
         return []
+    
+def delete_blog_cache():
+    redis_client = cache.cache._write_client
+    for key in redis_client.scan_iter("get_all_blogs:*"):
+        redis_client.delete(key)

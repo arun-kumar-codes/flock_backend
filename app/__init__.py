@@ -18,7 +18,8 @@ jwt = JWTManager()
 
 cache_config = {
     'CACHE_TYPE': 'RedisCache',
-    'CACHE_REDIS_URL': os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+    'CACHE_REDIS_URL': os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
+    'CACHE_KEY_PREFIX': 'flock_platform'
 }
 cache = Cache(config=cache_config)
 
@@ -42,9 +43,13 @@ def create_app(config_name='default'):
     from app.routes.blog import blog_bp
     from app.routes.video import video_bp
     from app.routes.content import content_bp
+    from app.routes.cpm import cpm_bp
+    from app.routes.earnings import earnings_bp
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(email_bp, url_prefix='/api/email')
     app.register_blueprint(blog_bp, url_prefix='/api/blog')
     app.register_blueprint(video_bp, url_prefix='/api/video')
     app.register_blueprint(content_bp, url_prefix='/api/content')
+    app.register_blueprint(cpm_bp, url_prefix='/api/cpm')
+    app.register_blueprint(earnings_bp, url_prefix='/api/earnings')
     return app 

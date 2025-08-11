@@ -2,6 +2,7 @@ import subprocess
 from datetime import datetime, timedelta
 
 from flask import jsonify
+from app import cache
 from app.models import Video, VideoStatus
 
 def get_video_duration(file_path):
@@ -46,3 +47,8 @@ def get_trending_videos():
     except Exception as e:
         print(f"Error getting trending videos: {e}")
         return []
+    
+def delete_video_cache():
+    redis_client = cache.cache._write_client
+    for key in redis_client.scan_iter("get_all_videos:*"):
+        redis_client.delete(key)

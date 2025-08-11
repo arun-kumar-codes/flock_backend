@@ -7,7 +7,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from app import db, cache
 from app.models import Video, User, VideoStatus, VideoComment, VideoWatchTime, UserRole
-from app.utils import creator_required, admin_required, get_video_duration, transcode_video, get_trending_videos
+from app.utils import creator_required, admin_required, get_video_duration, transcode_video, get_trending_videos, delete_video_cache
 
 video_bp = Blueprint('video', __name__)
 
@@ -90,7 +90,7 @@ def create_video():
             )
             db.session.add(video)
             db.session.commit()
-            cache.delete_pattern("get_all_videos:*")
+            delete_video_cache()
 
         return jsonify({'message': 'Video uploaded successfully', 'url': playback_url}), 201
 
@@ -139,7 +139,7 @@ def update_video(video_id):
             video.status = VideoStatus.DRAFT
         
         db.session.commit()
-        cache.delete_pattern("get_all_videos:*")
+        delete_video_cache()
         return jsonify({
             'message': 'Video updated successfully',
             'video': video.to_dict(user.id)
@@ -168,7 +168,7 @@ def approve_video(video_id):
         
         if video.approve():
             db.session.commit()
-            cache.delete_pattern("get_all_videos:*")
+            delete_video_cache()
             return jsonify({
                 'message': 'Video approved successfully',
                 'video': video.to_dict(user.id)
@@ -199,7 +199,7 @@ def reject_video(video_id):
         
         if video.reject():
             db.session.commit()
-            cache.delete_pattern("get_all_videos:*")
+            delete_video_cache()
             return jsonify({
                 'message': 'Video rejected successfully',
                 'video': video.to_dict(user.id)
@@ -231,7 +231,7 @@ def archive_video(video_id):
         
         if video.archive():
             db.session.commit()
-            cache.delete_pattern("get_all_videos:*")
+            delete_video_cache()
             return jsonify({
                 'message': 'Video archived successfully',
                 'video': video.to_dict(user.id)
@@ -263,7 +263,7 @@ def unarchive_video(video_id):
         
         if video.unarchive():
             db.session.commit()
-            cache.delete_pattern("get_all_videos:*")
+            delete_video_cache()
             return jsonify({
                 'message': 'Video unarchived successfully',
                 'video': video.to_dict(user.id)
@@ -298,7 +298,7 @@ def send_video_for_approval(video_id):
         
         if video.send_for_approval():
             db.session.commit()
-            cache.delete_pattern("get_all_videos:*")
+            delete_video_cache()
             return jsonify({
                 'message': 'Video sent for approval successfully',
                 'video': video.to_dict(user.id)
@@ -418,7 +418,7 @@ def toggle_like_video(video_id):
             message = 'Video liked successfully'
         
         db.session.commit()
-        cache.delete_pattern("get_all_videos:*")
+        delete_video_cache()
         return jsonify({
             'message': message,
             'likes': video.likes,
@@ -459,7 +459,7 @@ def create_video_comment(video_id):
         )
         db.session.add(comment)
         db.session.commit()
-        cache.delete_pattern("get_all_videos:*")
+        delete_video_cache()
         return jsonify({
             'message': 'Comment created successfully',
             'comment': comment.to_dict()
@@ -495,7 +495,7 @@ def edit_video_comment(comment_id):
         
         comment.comment = comment_text.strip()
         db.session.commit()
-        cache.delete_pattern("get_all_videos:*")
+        delete_video_cache()
         return jsonify({
             'message': 'Comment updated successfully',
             'comment': comment.to_dict()
@@ -524,7 +524,7 @@ def add_video_view(video_id):
         # Add view for the user
         video.add_view(user.id)
         db.session.commit()
-        cache.delete_pattern("get_all_videos:*")
+        delete_video_cache()
         return jsonify({
             'message': 'View added successfully',
             'views': video.views,
@@ -560,10 +560,16 @@ def add_video_watch_time(video_id):
         if not watch_time_seconds or not isinstance(watch_time_seconds, (int, float)) or watch_time_seconds <= 0:
             return jsonify({'error': 'Valid watch_time (positive number) is required in payload'}), 400
         
+        if watch_time_seconds <= 0.9 * video.duration:
+            return jsonify({'error': 'Watch time must be greater than 90% of video duration'}), 400
+        if watch_time_seconds > video.duration:
+            # return jsonify({'error': 'Watch time cannot be greater than video duration'}), 400
+            watch_time_seconds = video.duration
+        
         # Add watch time to the video
         video.add_watch_time(user.id, int(watch_time_seconds))
         db.session.commit()
-        cache.delete_pattern("get_all_videos:*")
+        delete_video_cache()
         return jsonify({
             'message': 'Watch time added successfully',
             'total_watch_time': video.total_watch_time,
@@ -628,7 +634,7 @@ def delete_video_comment(comment_id):
         
         db.session.delete(comment)
         db.session.commit()
-        cache.delete_pattern("get_all_videos:*")
+        delete_video_cache()
         return jsonify({
             'message': 'Comment deleted successfully'
         }), 200

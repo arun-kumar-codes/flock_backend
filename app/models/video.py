@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from enum import Enum
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.mutable import MutableList
@@ -108,19 +109,45 @@ class Video(db.Model):
             self.viewed_by.append(user_id)
             self.views += 1
     
+    def calculate_earnings_for_watch_time(self, watch_time_seconds):
+        """Calculate earnings for watch time and create earnings entry"""
+        
+        # Convert seconds to minutes
+        watch_time_minutes = watch_time_seconds / 60.0
+        
+        # Get current CPM rate
+        from app.models import CreatorEarnings, CPMConfig
+        cpm_config = CPMConfig.get_active_config()
+        if not cpm_config:
+            # Use default rate if no config exists
+            cpm_rate = Decimal('2.00')
+        else:
+            cpm_rate = cpm_config.cpm_rate
+        
+        # Calculate earnings: (watch_time_minutes / 1000) * cpm_rate
+        earnings = (Decimal(str(watch_time_minutes)) / Decimal('1000')) * cpm_rate
+        
+        # Create earnings entry
+        earnings_entry = CreatorEarnings(
+            creator_id=self.created_by,
+            video_id=self.id,
+            watch_time_minutes=int(watch_time_minutes),
+            earnings=earnings,
+            cpm_rate_used=cpm_rate
+        )
+        
+        db.session.add(earnings_entry)
+        return earnings_entry
+
     def add_watch_time(self, user_id, watch_time_seconds):
         """Add watch time from a user"""
-        # Create or update watch time entry
+        # Create watch time entry
         watch_time_entry = VideoWatchTime.query.filter_by(
             video_id=self.id, 
             user_id=user_id
         ).first()
         
-        if watch_time_entry:
-            # Update existing entry
-            watch_time_entry.watch_time += watch_time_seconds
-            watch_time_entry.last_watched = datetime.utcnow()
-        else:
+        if not watch_time_entry:
             # Create new entry
             watch_time_entry = VideoWatchTime(
                 video_id=self.id,
@@ -128,9 +155,17 @@ class Video(db.Model):
                 watch_time=watch_time_seconds
             )
             db.session.add(watch_time_entry)
-        
-        # Update total watch time for the video
-        self.total_watch_time += watch_time_seconds
+            # Update total watch time for the video
+            self.calculate_earnings_for_watch_time(watch_time_seconds)
+            self.total_watch_time += watch_time_seconds
+            
+    def get_total_earnings(self):
+        """Get total earnings for this video"""
+        from app.models import CreatorEarnings
+        total = db.session.query(db.func.sum(CreatorEarnings.earnings))\
+            .filter(CreatorEarnings.video_id == self.id)\
+            .scalar()
+        return float(total) if total else 0.0
     
     def get_user_watch_time(self, user_id):
         """Get watch time for a specific user"""

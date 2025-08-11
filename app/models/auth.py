@@ -4,7 +4,6 @@ from datetime import datetime
 from sqlalchemy import Table, Column, Integer, ForeignKey, DateTime
 from app import db
 
-
 class UserRole(Enum):
     CREATOR = "Creator"
     VIEWER = "Viewer"
@@ -109,9 +108,49 @@ class User(db.Model):
             query = query.limit(limit)
         return query.all()
     
+    def get_total_earnings(self):
+        """Get total earnings for the creator"""
+        if self.role != UserRole.CREATOR:
+            return 0.0
+        from app.models import CreatorEarnings
+        total = db.session.query(db.func.sum(CreatorEarnings.earnings))\
+            .filter(CreatorEarnings.creator_id == self.id)\
+            .scalar()
+        return float(total) if total else 0.0
+    
+    def get_monthly_earnings(self, year=None, month=None):
+        """Get earnings for a specific month"""
+        if self.role != UserRole.CREATOR:
+            return 0.0
+        
+        if year is None:
+            year = datetime.utcnow().year
+        if month is None:
+            month = datetime.utcnow().month
+        from app.models import CreatorEarnings
+        total = db.session.query(db.func.sum(CreatorEarnings.earnings))\
+            .filter(CreatorEarnings.creator_id == self.id)\
+            .filter(db.func.extract('year', CreatorEarnings.calculated_at) == year)\
+            .filter(db.func.extract('month', CreatorEarnings.calculated_at) == month)\
+            .scalar()
+        return float(total) if total else 0.0
+    
+    def get_earnings_history(self, limit=None):
+        """Get earnings history for the creator"""
+        if self.role != UserRole.CREATOR:
+            return []
+        from app.models import CreatorEarnings
+        query = CreatorEarnings.query.filter_by(creator_id=self.id)\
+            .order_by(CreatorEarnings.calculated_at.desc())
+        
+        if limit:
+            query = query.limit(limit)
+        
+        return [earning.to_dict() for earning in query.all()]
+    
     def to_dict(self):
         """Convert user to dictionary (excluding password)"""
-        return {
+        base_dict = {
             'id': self.id,
             'username': self.username,
             'email': self.email,
@@ -120,6 +159,15 @@ class User(db.Model):
             'followers_count': self.get_followers_count(),
             'following_count': self.get_following_count()
         }
+        
+        # Add earnings info for creators
+        if self.role == UserRole.CREATOR:
+            base_dict.update({
+                'total_earnings': self.get_total_earnings(),
+                'monthly_earnings': self.get_monthly_earnings()
+            })
+        
+        return base_dict
     
     def __repr__(self):
         return f'<User {self.username}>' 
