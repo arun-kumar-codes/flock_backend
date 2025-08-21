@@ -332,7 +332,7 @@ def get_video(video_id):
 
 
 @video_bp.route('/get-all', methods=['GET'])
-@jwt_required()
+@jwt_required(optional=True)
 @cache.cached(timeout=300, key_prefix=lambda: f"get_all_videos:{request.full_path}")
 def get_all_videos():
     """Get all published videos with pagination"""
@@ -352,7 +352,7 @@ def get_all_videos():
             }), 200
         
         # Build query - exclude archived videos and draft videos
-        query = Video.query.filter_by(archived=False).filter(Video.status != VideoStatus.DRAFT)
+        query = Video.query.filter_by(archived=False).filter(Video.status != VideoStatus.DRAFT).order_by(Video.created_at.desc())
         if creator_id:
             query = query.filter_by(created_by=creator_id)
         # Apply status filter if provided
@@ -365,13 +365,15 @@ def get_all_videos():
                 return jsonify({'error': 'Invalid status value. Valid values: draft, pending_approval, published, rejected'}), 400
         
         videos = query.all()
-        videos_list = [video.to_dict(user.id) for video in videos]
+        print(videos)
+        videos_list = [video.to_dict(user.id if user else None) for video in videos]
         
         return jsonify({
             'videos': videos_list
         }), 200
         
     except Exception as e:
+        print(e)
         return jsonify({'error': 'Internal server error'}), 500
 
 

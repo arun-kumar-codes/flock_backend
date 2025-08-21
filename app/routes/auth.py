@@ -6,8 +6,8 @@ import requests
 
 from app import db
 from app.models import User, UserRole, Invitation, Video, Blog, VideoStatus, BlogStatus
-from app.utils import admin_required, creator_required
-from app.utils.blog import allowed_file, delete_previous_image
+from app.utils import admin_required, creator_required, delete_video_cache
+from app.utils.blog import allowed_file, delete_blog_cache, delete_previous_image
 import firebase_setup
 
 auth_bp = Blueprint('auth', __name__)
@@ -300,8 +300,7 @@ def get_all_users():
         return jsonify({'error': 'Internal server error'}), 500
     
 @auth_bp.route('/all-creators', methods=['GET'])
-@jwt_required()
-@admin_required
+@jwt_required(optional=True)
 def get_all_creators():
     """Get all creators"""
     try:
@@ -448,6 +447,8 @@ def follow_user(user_id):
         
         if success:
             db.session.commit()
+            delete_video_cache()
+            delete_blog_cache()
             return jsonify({
                 'message': f'Successfully followed {user_to_follow.username}',
                 'followed_user': user_to_follow.to_dict(),
@@ -489,6 +490,8 @@ def unfollow_user(user_id):
         
         if success:
             db.session.commit()
+            delete_video_cache()
+            delete_blog_cache()
             return jsonify({
                 'message': f'Successfully unfollowed {user_to_unfollow.username}',
                 'unfollowed_user': user_to_unfollow.to_dict()
@@ -541,3 +544,11 @@ def get_user_following():
         
     except Exception as e:
         return jsonify({'error': 'Internal server error'}), 500
+    
+@auth_bp.route('/cache-clear', methods=['GET'])    
+def cache_clear():
+    delete_video_cache()
+    delete_blog_cache()
+    return jsonify({
+        'success': 'Cache cleared'
+    }), 200

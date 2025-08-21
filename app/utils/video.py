@@ -50,5 +50,5 @@ def get_trending_videos():
     
 def delete_video_cache():
     redis_client = cache.cache._write_client
-    for key in redis_client.scan_iter("get_all_videos:*"):
+    for key in redis_client.scan_iter("flock_platform_get_all_videos*"):
         redis_client.delete(key)

@@ -8,7 +8,7 @@ from app import cache
 content_bp = Blueprint('content', __name__)
 
 @content_bp.route('/most-viewed', methods=['GET'])
-@jwt_required()
+@jwt_required(optional=True)
 @cache.cached(timeout=300, key_prefix=lambda: f"get_most_viewed_content:{request.full_path}")
 def get_most_viewed_content():
     email = get_jwt_identity()
@@ -20,7 +20,7 @@ def get_most_viewed_content():
     return jsonify({'blogs': most_viewed_blogs, 'videos': most_viewed_videos}), 200
 
 @content_bp.route('/most-liked', methods=['GET'])
-@jwt_required()
+@jwt_required(optional=True)
 @cache.cached(timeout=300, key_prefix=lambda: f"get_most_liked_content:{request.full_path}")
 def get_most_liked_content():
     email = get_jwt_identity()

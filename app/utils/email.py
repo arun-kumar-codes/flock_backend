@@ -1,11 +1,5 @@
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 import os
-import smtplib
-import base64
-import hashlib
-
-from flask import current_app
+import resend
 
 from app import db
 from app.models.auth import Invitation
@@ -31,12 +25,8 @@ def send_invitation_email(to_email: str) -> bool:
             db.session.add(invitation)
             db.session.commit()
 
-        # Email configuration
-        smtp_server = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
-        smtp_port = int(os.getenv('SMTP_PORT', '587'))
-        smtp_username = os.getenv('SMTP_USERNAME')
-        smtp_password = os.getenv('SMTP_PASSWORD')
-        from_email = os.getenv('FROM_EMAIL', smtp_username)
+        # Resend configuration
+        resend.api_key = os.getenv('RESEND_API_KEY')
         
         # Email content
         subject = "You're Invited to Join Flock Platform!"
@@ -54,7 +44,7 @@ def send_invitation_email(to_email: str) -> bool:
         - 
         
         To accept this invitation, please visit our platform by clicking on the link below.
-        http://localhost:3000/signup
+        http://116.202.210.102:3003/signup
         
         We're excited to have you join our community!
         
@@ -83,7 +73,7 @@ def send_invitation_email(to_email: str) -> bool:
                 <p>To accept this invitation, please visit our platform by clicking on the link below.</p>
                 
                 <div style="text-align: center; margin: 30px 0;">
-                    <a href="http://localhost:3000/signup" style="background-color: #3498db; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">Join Flock Platform</a>
+                    <a href="http://116.202.210.102:3003/signup" style="background-color: #3498db; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">Join Flock Platform</a>
                 </div>
                 
                 <p>We're excited to have you join our community!</p>
@@ -99,31 +89,20 @@ def send_invitation_email(to_email: str) -> bool:
         </html>
         """
         
-        # Create message
-        msg = MIMEMultipart('alternative')
-        msg['From'] = from_email
-        msg['To'] = to_email
-        msg['Subject'] = subject
-        
-        # Add plain text body
-        text_part = MIMEText(body, 'plain')
-        msg.attach(text_part)
-        
-        # Add HTML body
-        html_part = MIMEText(html_body, 'html')
-        msg.attach(html_part)
-        
-        # Send email
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
-            server.starttls()
-            server.login(smtp_username, smtp_password)
-            server.send_message(msg)
-        
-        current_app.logger.info(f"Invitation email sent successfully to {to_email}")
+         # Send email via Resend
+        params: resend.Emails.SendParams = {
+        "from": "onboarding@resend.dev",
+        "to": [to_email],
+        "subject": subject,
+        "html": html_body,
+        "text": body
+        }
+        resend.Emails.send(params)
+        print(f"Invitation email sent successfully to {to_email}")
         return True
         
     except Exception as e:
         # Rollback database changes if email sending fails
         db.session.rollback()
-        current_app.logger.error(f"Failed to send invitation email to {to_email}: {str(e)}")
+        print(f"Failed to send invitation email to {to_email}: {str(e)}")
         return False

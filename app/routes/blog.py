@@ -392,7 +392,7 @@ def add_blog_view(blog_id):
 
 
 @blog_bp.route('/get-all', methods=['GET'])
-@jwt_required()
+@jwt_required(optional=True)
 @cache.cached(timeout=600, key_prefix=lambda: f"get_all_blogs:{request.full_path}")
 def get_all_blogs():
     """Get all blogs with optional filtering"""
@@ -412,7 +412,7 @@ def get_all_blogs():
         
         
         # Build query - exclude archived blogs and draft blogs
-        query = Blog.query.filter_by(archived=False).filter(Blog.status != BlogStatus.DRAFT)
+        query = Blog.query.filter_by(archived=False).filter(Blog.status != BlogStatus.DRAFT).order_by(Blog.created_at.desc())
         if creator_id:
             query = query.filter_by(created_by=creator_id)
         
