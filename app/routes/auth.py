@@ -88,6 +88,7 @@ def login():
         email = decoded_token.get('email')
 
         # Check if user exists
+        is_new_user = False
         user = User.query.filter_by(email=email).first()
         if not user:
             invitation = Invitation.query.filter_by(email=email).first()
@@ -98,6 +99,7 @@ def login():
             user = User(email=email, role=role)
             db.session.add(user)
             db.session.commit()
+            is_new_user = True
 
         profile_complete = user.is_profile_complete()
         access_token = create_access_token(identity=user.email)
@@ -108,7 +110,8 @@ def login():
             'access_token': access_token,
             'refresh_token': refresh_token,
             'user': user.to_dict(),
-            'profile_complete': profile_complete
+            'profile_complete': profile_complete,
+            'is_new_user': is_new_user
         }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 400

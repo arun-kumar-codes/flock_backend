@@ -9,7 +9,6 @@ from app.models import User
 
 class BlogStatus(Enum):
     DRAFT = 'draft'
-    PENDING_APPROVAL = 'pending_approval'
     PUBLISHED = 'published'
     REJECTED = 'rejected'
 
@@ -21,7 +20,9 @@ class Blog(db.Model):
     title = db.Column(db.String(200), nullable=False)
     content = db.Column(db.Text, nullable=False)
     image = db.Column(db.String(500), nullable=True)
-    status = db.Column(db.Enum(BlogStatus), default=BlogStatus.DRAFT, index=True)
+    is_draft = db.Column(db.Boolean, default=False, index=True)
+    status = db.Column(db.Enum(BlogStatus), default=BlogStatus.PUBLISHED, index=True)
+    reason_for_rejection = db.Column(db.String(1000), nullable=True)
     archived = db.Column(db.Boolean, default=False, index=True)
     likes = db.Column(db.Integer, default=0, index=True)
     liked_by = db.Column(MutableList.as_mutable(ARRAY(db.Integer)), default=list)
@@ -36,38 +37,42 @@ class Blog(db.Model):
     # Relationship with Comment (one-to-many)
     comments = db.relationship('Comment', backref='blog', lazy=True, cascade='all, delete-orphan')
     
-    def __init__(self, title, content, created_by, image=None):
+    def __init__(self, title, content, created_by, image=None, is_draft=False):
         self.title = title
         self.content = content
         self.created_by = created_by
         self.image = image
-        self.status = BlogStatus.DRAFT
+        self.is_draft = is_draft
+        self.status = BlogStatus.DRAFT if is_draft else BlogStatus.PUBLISHED
         self.archived = False
         self.likes = 0
         self.liked_by = []
         self.views = 0
         self.viewed_by = []
     
-    def send_for_approval(self):
-        """Send blog for admin approval"""
-        if self.status == BlogStatus.DRAFT:
-            self.status = BlogStatus.PENDING_APPROVAL
-            return True
-        return False
+    def publish(self):
+        """Publish the blog"""
+        self.status = BlogStatus.PUBLISHED
+        self.is_draft = False
+        return True
     
-    def approve(self):
-        """Approve blog by admin"""
-        if self.status == BlogStatus.PENDING_APPROVAL:
-            self.status = BlogStatus.PUBLISHED
-            return True
-        return False
-    
-    def reject(self):
+    def reject(self, reason):
         """Reject blog by admin"""
-        if self.status == BlogStatus.PENDING_APPROVAL:
+        if self.status == BlogStatus.PUBLISHED:
             self.status = BlogStatus.REJECTED
+            self.reason_for_rejection = reason
             return True
         return False
+    
+    def delete(self):
+        """Delete the blog"""
+        try:
+            db.session.delete(self)
+            db.session.commit()
+            return True
+        except Exception as e:
+            db.session.rollback()
+            return False
     
     def archive(self):
         """Archive the blog"""
@@ -122,6 +127,8 @@ class Blog(db.Model):
             'title': self.title,
             'content': self.content,
             'image': self.image,
+            'is_draft': self.is_draft,
+            'reason_for_rejection': self.reason_for_rejection,
             'status': self.status.value if self.status else None,
             'archived': self.archived,
             'likes': self.likes,

@@ -25,6 +25,7 @@ def create_blog():
         title = request.form.get('title')
         content = request.form.get('content')
         image_file = request.files.get('image')
+        is_draft = request.form.get('is_draft')
         
         if not title or not content:
             return jsonify({'error': 'Title and content are required'}), 400
@@ -54,7 +55,8 @@ def create_blog():
             title=title,
             content=content,
             created_by=user.id,
-            image=image_path
+            image=image_path,
+            is_draft=is_draft == 'true'
         )
         db.session.add(blog)
         db.session.commit()
@@ -91,8 +93,8 @@ def update_blog(blog_id):
             return jsonify({'error': 'You can only update your own blogs'}), 403
         
         # Check if blog can be updated (draft or rejected status only)
-        if blog.status not in [BlogStatus.DRAFT, BlogStatus.REJECTED]:
-            return jsonify({'error': 'Only draft or rejected blogs can be updated'}), 400
+        if blog.status not in [BlogStatus.DRAFT]:
+            return jsonify({'error': 'Only draft blogs can be updated'}), 400
         
         # Get form data for updates
         title = request.form.get('title')
@@ -127,10 +129,6 @@ def update_blog(blog_id):
             else:
                 return jsonify({'error': 'Image upload failed'}), 400
         
-        # If blog was rejected and is being updated, change status back to draft
-        if blog.status == BlogStatus.REJECTED:
-            blog.status = BlogStatus.DRAFT
-        
         db.session.commit()
         delete_blog_cache()
         return jsonify({
@@ -143,11 +141,11 @@ def update_blog(blog_id):
         return jsonify({'error': 'Internal server error'}), 500
 
 
-@blog_bp.route('/<int:blog_id>/approve', methods=['PATCH'])
+@blog_bp.route('/<int:blog_id>/publish', methods=['PATCH'])
 @jwt_required()
-@admin_required
-def approve_blog(blog_id):
-    """Approve a blog by admin"""
+@creator_required
+def publish_blog(blog_id):
+    """Publish a blog by creator"""
     try:
         email = get_jwt_identity()
         user = User.query.filter_by(email=email).first()
@@ -160,19 +158,19 @@ def approve_blog(blog_id):
             return jsonify({'error': 'Blog not found'}), 404
         
         # Check if blog is pending approval
-        if blog.status != BlogStatus.PENDING_APPROVAL:
-            return jsonify({'error': 'Only blogs pending approval can be approved'}), 400
+        if blog.status != BlogStatus.DRAFT:
+            return jsonify({'error': 'Only draft blogs can be published'}), 400
         
         # Approve the blog
-        if blog.approve():
+        if blog.publish():
             db.session.commit()
             delete_blog_cache()
             return jsonify({
-                'message': 'Blog approved successfully',
+                'message': 'Blog published successfully',
                 'blog': blog.to_dict(user.id)
             }), 200
         else:
-            return jsonify({'error': 'Failed to approve blog'}), 400
+            return jsonify({'error': 'Failed to publish blog'}), 400
         
     except Exception as e:
         db.session.rollback()
@@ -195,12 +193,14 @@ def reject_blog(blog_id):
         if not blog:
             return jsonify({'error': 'Blog not found'}), 404
         
-        # Check if blog is pending approval
-        if blog.status != BlogStatus.PENDING_APPROVAL:
-            return jsonify({'error': 'Only blogs pending approval can be rejected'}), 400
-        
+        # Check if blog is published
+        if blog.status != BlogStatus.PUBLISHED:
+            return jsonify({'error': 'Only published blogs can be rejected'}), 400
+        reason = request.json.get('reason')
+        if not reason:
+            return jsonify({'error': 'Reason is required'}), 400
         # Reject the blog
-        if blog.reject():
+        if blog.reject(reason):
             db.session.commit()
             delete_blog_cache()
             return jsonify({
@@ -211,6 +211,7 @@ def reject_blog(blog_id):
             return jsonify({'error': 'Failed to reject blog'}), 400
         
     except Exception as e:
+        print(e)
         db.session.rollback()
         return jsonify({'error': 'Internal server error'}), 500
 
@@ -295,11 +296,11 @@ def unarchive_blog(blog_id):
         return jsonify({'error': 'Internal server error'}), 500
 
 
-@blog_bp.route('/<int:blog_id>/send-for-approval', methods=['PATCH'])
+@blog_bp.route('/<int:blog_id>/delete', methods=['DELETE'])
 @jwt_required()
 @creator_required
-def send_blog_for_approval(blog_id):
-    """Send a draft blog for admin approval"""
+def delete_blog(blog_id):
+    """Delete a blog"""
     try:
         email = get_jwt_identity()
         user = User.query.filter_by(email=email).first()
@@ -313,25 +314,19 @@ def send_blog_for_approval(blog_id):
         
         # Check if the user is the creator of the blog
         if blog.created_by != user.id:
-            return jsonify({'error': 'You can only send your own blogs for approval'}), 403
+            return jsonify({'error': 'You can only delete your own blogs'}), 403
         
-        # Check if blog can be sent for approval (draft status)
-        if blog.status != BlogStatus.DRAFT:
-            return jsonify({'error': 'Only draft blogs can be sent for approval'}), 400
-        
-        # Send for approval
-        if blog.send_for_approval():
-            db.session.commit()
+        if blog.delete():
             delete_blog_cache()
+            print("cache deleted")
             return jsonify({
-                'message': 'Blog sent for approval successfully',
+                'message': 'Blog deleted successfully',
                 'blog': blog.to_dict(user.id)
             }), 200
         else:
-            return jsonify({'error': 'Failed to send blog for approval'}), 400
+            return jsonify({'error': 'Failed to delete blog'}), 400
         
     except Exception as e:
-        db.session.rollback()
         return jsonify({'error': 'Internal server error'}), 500
 
 
@@ -423,7 +418,7 @@ def get_all_blogs():
                 status_enum = BlogStatus(status_filter)
                 query = query.filter_by(status=status_enum)
             except ValueError:
-                return jsonify({'error': 'Invalid status value. Valid values: draft, pending_approval, published, rejected'}), 400
+                return jsonify({'error': 'Invalid status value. Valid values: draft, published, rejected'}), 400
         
         blogs = query.all()
         

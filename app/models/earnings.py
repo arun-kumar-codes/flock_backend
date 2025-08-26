@@ -9,7 +9,7 @@ class CreatorEarnings(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     creator_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    video_id = db.Column(db.Integer, db.ForeignKey('videos.id'), nullable=False)
+    video_id = db.Column(db.Integer, db.ForeignKey('videos.id', ondelete='SET NULL'), nullable=True)
     watch_time_minutes = db.Column(db.Integer, default=0, nullable=False)
     earnings = db.Column(Numeric(10, 4), default=0.00, nullable=False)
     cpm_rate_used = db.Column(Numeric(10, 4), nullable=False)
@@ -17,7 +17,7 @@ class CreatorEarnings(db.Model):
     
     # Relationships
     creator = db.relationship('User', backref=db.backref('earnings', lazy=True))
-    video = db.relationship('Video', backref=db.backref('earnings', lazy=True))
+    video = db.relationship('Video', backref=db.backref('earnings', lazy=True, passive_deletes=True))
     
     def __init__(self, creator_id, video_id, watch_time_minutes, earnings, cpm_rate_used):
         self.creator_id = creator_id

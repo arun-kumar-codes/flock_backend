@@ -26,6 +26,7 @@ def create_video():
         user = User.query.filter_by(email=email).first()
         video_file = request.files.get('video')
         title = request.form.get('title')
+        is_draft = request.form.get('is_draft')
 
         if not video_file or not title:
             return jsonify({'error': 'Missing title or video'}), 400
@@ -86,7 +87,8 @@ def create_video():
                 duration=duration,
                 video=playback_url,
                 thumbnail=cloudflare_data['result']['thumbnail'],
-                created_by=user.id
+                created_by=user.id,
+                is_draft=is_draft == 'true'
             )
             db.session.add(video)
             db.session.commit()
@@ -118,9 +120,9 @@ def update_video(video_id):
         if video.created_by != user.id:
             return jsonify({'error': 'You can only update your own videos'}), 403
         
-        # Check if video can be updated (draft or rejected status only)
-        if video.status not in [VideoStatus.DRAFT, VideoStatus.REJECTED]:
-            return jsonify({'error': 'Only draft or rejected videos can be updated'}), 400
+        # Check if video can be updated (draft only)
+        if video.status not in [VideoStatus.DRAFT]:
+            return jsonify({'error': 'Only draft videos can be updated'}), 400
         
         # Get form data for updates
         title = request.json.get('title')
@@ -135,9 +137,6 @@ def update_video(video_id):
         if description is not None:
             video.description = description
 
-        if video.status == VideoStatus.REJECTED:
-            video.status = VideoStatus.DRAFT
-        
         db.session.commit()
         delete_video_cache()
         return jsonify({
@@ -150,11 +149,11 @@ def update_video(video_id):
         return jsonify({'error': 'Internal server error'}), 500
 
 
-@video_bp.route('/<int:video_id>/approve', methods=['PATCH'])
+@video_bp.route('/<int:video_id>/publish', methods=['PATCH'])
 @jwt_required()
-@admin_required
-def approve_video(video_id):
-    """Approve a video by admin"""
+@creator_required
+def publish_video(video_id):
+    """Publish a video by creator"""
     try:
         email = get_jwt_identity()
         user = User.query.filter_by(email=email).first()
@@ -163,18 +162,18 @@ def approve_video(video_id):
         if not video:
             return jsonify({'error': 'Video not found'}), 404
         
-        if video.status != VideoStatus.PENDING_APPROVAL:
-            return jsonify({'error': 'Only pending videos can be approved'}), 400
+        if video.status != VideoStatus.DRAFT:
+            return jsonify({'error': 'Only draft videos can be published'}), 400
         
-        if video.approve():
+        if video.publish():
             db.session.commit()
             delete_video_cache()
             return jsonify({
-                'message': 'Video approved successfully',
+                'message': 'Video published successfully',
                 'video': video.to_dict(user.id)
             }), 200
         else:
-            return jsonify({'error': 'Failed to approve video'}), 400
+            return jsonify({'error': 'Failed to publish video'}), 400
             
     except Exception as e:
         db.session.rollback()
@@ -194,10 +193,12 @@ def reject_video(video_id):
         if not video:
             return jsonify({'error': 'Video not found'}), 404
         
-        if video.status != VideoStatus.PENDING_APPROVAL:
-            return jsonify({'error': 'Only pending videos can be rejected'}), 400
-        
-        if video.reject():
+        if video.status != VideoStatus.PUBLISHED:
+            return jsonify({'error': 'Only published videos can be rejected'}), 400
+        reason = request.json.get('reason')
+        if not reason:
+            return jsonify({'error': 'Reason is required'}), 400
+        if video.reject(reason):
             db.session.commit()
             delete_video_cache()
             return jsonify({
@@ -276,38 +277,31 @@ def unarchive_video(video_id):
         return jsonify({'error': 'Internal server error'}), 500
 
 
-@video_bp.route('/<int:video_id>/send-for-approval', methods=['PATCH'])
+@video_bp.route('/<int:video_id>/delete', methods=['DELETE'])
 @jwt_required()
 @creator_required
-def send_video_for_approval(video_id):
-    """Send a video for admin approval"""
+def delete_video(video_id):
+    """Delete a video"""
     try:
         email = get_jwt_identity()
         user = User.query.filter_by(email=email).first()
-        
+
         video = Video.query.get(video_id)
         if not video:
             return jsonify({'error': 'Video not found'}), 404
         
-        # Check if the user is the creator of the video
         if video.created_by != user.id:
-            return jsonify({'error': 'You can only send your own videos for approval'}), 403
-        
-        if video.status != VideoStatus.DRAFT:
-            return jsonify({'error': 'Only draft videos can be sent for approval'}), 400
-        
-        if video.send_for_approval():
-            db.session.commit()
+            return jsonify({'error': 'You can only delete your own videos'}), 403
+
+        if video.delete():
             delete_video_cache()
             return jsonify({
-                'message': 'Video sent for approval successfully',
-                'video': video.to_dict(user.id)
+                'message': 'Video deleted successfully'
             }), 200
         else:
-            return jsonify({'error': 'Failed to send video for approval'}), 400
+            return jsonify({'error': 'Failed to delete video'}), 400
             
     except Exception as e:
-        db.session.rollback()
         return jsonify({'error': 'Internal server error'}), 500
 
 
@@ -362,10 +356,9 @@ def get_all_videos():
                 status_enum = VideoStatus(status_filter)
                 query = query.filter_by(status=status_enum)
             except ValueError:
-                return jsonify({'error': 'Invalid status value. Valid values: draft, pending_approval, published, rejected'}), 400
+                return jsonify({'error': 'Invalid status value. Valid values: draft, published, rejected'}), 400
         
         videos = query.all()
-        print(videos)
         videos_list = [video.to_dict(user.id if user else None) for video in videos]
         
         return jsonify({
@@ -373,7 +366,6 @@ def get_all_videos():
         }), 200
         
     except Exception as e:
-        print(e)
         return jsonify({'error': 'Internal server error'}), 500
 
 

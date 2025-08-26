@@ -9,7 +9,6 @@ from app.models import User
 
 class VideoStatus(Enum):
     DRAFT = 'draft'
-    PENDING_APPROVAL = 'pending_approval'
     PUBLISHED = 'published'
     REJECTED = 'rejected'
 
@@ -24,7 +23,9 @@ class Video(db.Model):
     thumbnail = db.Column(db.String(500), nullable=True)
     duration = db.Column(db.Integer, nullable=True)
     format = db.Column(db.String(50), nullable=True)
-    status = db.Column(db.Enum(VideoStatus), default=VideoStatus.DRAFT, index=True)
+    is_draft = db.Column(db.Boolean, default=False, index=True)
+    status = db.Column(db.Enum(VideoStatus), default=VideoStatus.PUBLISHED, index=True)
+    reason_for_rejection = db.Column(db.String(1000), nullable=True)
     archived = db.Column(db.Boolean, default=False, index=True)
     likes = db.Column(db.Integer, default=0, index=True)
     views = db.Column(db.Integer, default=0, index=True)
@@ -44,7 +45,7 @@ class Video(db.Model):
     watch_times = db.relationship('VideoWatchTime', backref='video', lazy=True, cascade='all, delete-orphan')
     
     def __init__(self, title, video, created_by, description=None, thumbnail=None, 
-                 duration=None, format=None):
+                 duration=None, format=None, is_draft=False):
         self.title = title
         self.video = video
         self.created_by = created_by
@@ -52,7 +53,8 @@ class Video(db.Model):
         self.thumbnail = thumbnail
         self.duration = duration
         self.format = format
-        self.status = VideoStatus.DRAFT
+        self.is_draft = is_draft
+        self.status = VideoStatus.DRAFT if is_draft else VideoStatus.PUBLISHED
         self.archived = False
         self.likes = 0
         self.views = 0
@@ -60,26 +62,30 @@ class Video(db.Model):
         self.liked_by = []
         self.viewed_by = []
     
-    def send_for_approval(self):
-        """Send video for admin approval"""
-        if self.status == VideoStatus.DRAFT:
-            self.status = VideoStatus.PENDING_APPROVAL
-            return True
-        return False
+    def publish(self):
+        """Publish the video"""
+        self.status = VideoStatus.PUBLISHED
+        self.is_draft = False
+        return True
     
-    def approve(self):
-        """Approve video by admin"""
-        if self.status == VideoStatus.PENDING_APPROVAL:
-            self.status = VideoStatus.PUBLISHED
-            return True
-        return False
-    
-    def reject(self):
+    def reject(self, reason):
         """Reject video by admin"""
-        if self.status == VideoStatus.PENDING_APPROVAL:
+        if self.status == VideoStatus.PUBLISHED:
             self.status = VideoStatus.REJECTED
+            self.reason_for_rejection = reason
             return True
         return False
+    
+    def delete(self):
+        """Delete the video"""
+        try:
+            db.session.delete(self)
+            db.session.commit()
+            return True
+        except Exception as e:
+            print(e)
+            db.session.rollback()
+            return False
     
     def archive(self):
         """Archive the video"""
@@ -230,6 +236,8 @@ class Video(db.Model):
             'duration': self.duration,
             'duration_formatted': self.format_duration(),
             'format': self.format,
+            'is_draft': self.is_draft,
+            'reason_for_rejection': self.reason_for_rejection,
             'status': self.status.value if self.status else None,
             'archived': self.archived,
             'likes': self.likes,

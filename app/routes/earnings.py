@@ -92,8 +92,8 @@ def setup_stripe_account():
                     # Get fresh onboarding link for existing account
                     account_link = stripe_service.get_account_link(
                         stripe_account_id=existing_account.stripe_account_id,
-                        refresh_url="http://116.202.210.102:3000/dashboard/analytics",
-                        return_url="http://116.202.210.102:3000/dashboard/analytics"
+                        refresh_url="http://116.202.210.102:3001/dashboard/payout",
+                        return_url="http://116.202.210.102:3001/dashboard/payout"
                     )
                     
                     return jsonify({
@@ -128,8 +128,8 @@ def setup_stripe_account():
         # Generate onboarding link
         account_link = stripe_service.get_account_link(
             stripe_account_id=account.id,
-            refresh_url="http://116.202.210.102:3000/dashboard/analytics",
-            return_url="http://116.202.210.102:3000/dashboard/analytics"
+            refresh_url="http://116.202.210.102:3001/dashboard/payout",
+            return_url="http://116.202.210.102:3001/dashboard/payout"
         )
         
         return jsonify({
@@ -154,7 +154,7 @@ def get_stripe_account():
     
     stripe_account = StripeAccount.query.filter_by(creator_id=creator.id).first()
     if not stripe_account:
-        return jsonify({'success': False, 'error': 'No Stripe account found'}), 404
+        return jsonify({'success': False, 'error': 'No Stripe account found'}), 400
     
     return jsonify({
         'success': True,
@@ -171,7 +171,7 @@ def get_stripe_account_status():
     
     stripe_account = StripeAccount.query.filter_by(creator_id=creator.id).first()
     if not stripe_account:
-        return jsonify({'error': 'No Stripe account found'}), 404
+        return jsonify({'error': 'No Stripe account found'}), 400
     
     try:
         stripe_service = StripeService()
@@ -202,7 +202,7 @@ def remove_stripe_account():
     
     stripe_account = StripeAccount.query.filter_by(creator_id=creator.id).first()
     if not stripe_account:
-        return jsonify({'error': 'No Stripe account found'}), 404
+        return jsonify({'error': 'No Stripe account found'}), 400
     
     stripe_service = StripeService()
     try:
