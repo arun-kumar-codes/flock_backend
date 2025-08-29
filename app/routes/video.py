@@ -7,7 +7,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from app import db, cache
 from app.models import Video, User, VideoStatus, VideoComment, VideoWatchTime, UserRole
-from app.utils import creator_required, admin_required, get_video_duration, transcode_video, get_trending_videos, delete_video_cache
+from app.utils import creator_required, admin_required, get_video_duration, transcode_video, delete_video_cache
 
 video_bp = Blueprint('video', __name__)
 
@@ -33,38 +33,31 @@ def create_video():
         if len(title) > 200:
             return jsonify({'error': 'Title must be less than 200 characters'}), 400 
        
-        # Check if user has already uploaded 5 videos
         # user_videos_count = Video.query.filter_by(created_by=user.id).count()
         # if user_videos_count >= 5:
         #     return jsonify({'error': 'You can only upload a maximum of 5 videos'}), 400
         
-        # Check if video file type is allowed
         allowed_video_types = {'mp4', 'mov'}
         ext = video_file.filename.lower().split('.')[-1]
         if ext not in allowed_video_types:
             return jsonify({'error': 'Invalid video file type, allowed types: mp4, mov'}), 400
 
-        # Save uploaded video to a temporary file
         with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as temp:
             video_file.save(temp.name)
 
-            # Validate video duration
             duration = get_video_duration(temp.name)
             if duration > 600:
                 return jsonify({'error': 'Video too long (max 10 mins)'}), 400
             if os.path.getsize(temp.name) > 250 * 1024 * 1024:
                 return jsonify({'error': 'File too large (max 250 MB)'}), 400
 
-            # Transcode with FFmpeg
             transcoded_path = temp.name.replace(f".{ext}", "_transcoded.mp4")
             transcode_video(temp.name, transcoded_path)
 
-            # Custom filename: username_datetime
             now_str = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
             clean_username = ''.join(c for c in user.username if c.isalnum() or c in ('-', '_'))
             upload_filename = f"{clean_username}_{now_str}.{ext}"
 
-            # Upload to Cloudflare Stream
             with open(transcoded_path, 'rb') as f:
                 response = requests.post(
                     CLOUDFLARE_STREAM_URL,
@@ -80,7 +73,6 @@ def create_video():
             cloudflare_data = response.json()
             playback_url = f"https://videodelivery.net/{cloudflare_data['result']['uid']}/watch"
 
-            # Save video info to DB
             video = Video(
                 title=title,
                 description=request.form.get('description'),
@@ -116,19 +108,15 @@ def update_video(video_id):
         if not video:
             return jsonify({'error': 'Video not found'}), 404
         
-        # Check if the user is the creator of the video
         if video.created_by != user.id:
             return jsonify({'error': 'You can only update your own videos'}), 403
         
-        # Check if video can be updated (draft only)
         if video.status not in [VideoStatus.DRAFT]:
             return jsonify({'error': 'Only draft videos can be updated'}), 400
         
-        # Get form data for updates
         title = request.json.get('title')
         description = request.json.get('description')
         
-        # Update fields if provided
         if title:
             if len(title) > 200:
                 return jsonify({'error': 'Title must be less than 200 characters'}), 400
@@ -226,7 +214,6 @@ def archive_video(video_id):
         if not video:
             return jsonify({'error': 'Video not found'}), 404
         
-        # Check if the user is the creator of the video
         if video.created_by != user.id:
             return jsonify({'error': 'You can only archive your own videos'}), 403
         
@@ -258,7 +245,6 @@ def unarchive_video(video_id):
         if not video:
             return jsonify({'error': 'Video not found'}), 404
         
-        # Check if the user is the creator of the video
         if video.created_by != user.id:
             return jsonify({'error': 'You can only unarchive your own videos'}), 403
         
@@ -334,24 +320,13 @@ def get_all_videos():
         email = get_jwt_identity()
         user = User.query.filter_by(email=email).first()
         
-        # Get query parameters
         status_filter = request.args.get('status')
-        trending = request.args.get('trending')
         creator_id = request.args.get('creator_id')
         
-        if trending:
-            trending_videos = get_trending_videos()
-            return jsonify({
-                'videos': [video.to_dict(user.id if user else None) for video in trending_videos]
-            }), 200
-        
-        # Build query - exclude archived videos and draft videos
         query = Video.query.filter_by(archived=False).filter(Video.status != VideoStatus.DRAFT).order_by(Video.created_at.desc())
         if creator_id:
             query = query.filter_by(created_by=creator_id)
-        # Apply status filter if provided
         if status_filter:
-            # Convert string to enum value
             try:
                 status_enum = VideoStatus(status_filter)
                 query = query.filter_by(status=status_enum)
@@ -515,7 +490,6 @@ def add_video_view(video_id):
         if video.status != VideoStatus.PUBLISHED:
             return jsonify({'error': 'Only published videos can be viewed'}), 400
         
-        # Add view for the user
         video.add_view(user.id)
         db.session.commit()
         delete_video_cache()
@@ -538,7 +512,6 @@ def add_video_watch_time(video_id):
         email = get_jwt_identity()
         user = User.query.filter_by(email=email).first()
         
-        # Only viewers can add watch time
         if user.role != UserRole.VIEWER:
             return jsonify({'error': 'Only viewers can add watch time'}), 403
         
@@ -549,7 +522,6 @@ def add_video_watch_time(video_id):
         if video.status != VideoStatus.PUBLISHED:
             return jsonify({'error': 'Only published videos can have watch time'}), 400
         
-        # Get watch time from request payload
         watch_time_seconds = request.json.get('watch_time')
         if not watch_time_seconds or not isinstance(watch_time_seconds, (int, float)) or watch_time_seconds <= 0:
             return jsonify({'error': 'Valid watch_time (positive number) is required in payload'}), 400
@@ -560,7 +532,6 @@ def add_video_watch_time(video_id):
             # return jsonify({'error': 'Watch time cannot be greater than video duration'}), 400
             watch_time_seconds = video.duration
         
-        # Add watch time to the video
         video.add_watch_time(user.id, int(watch_time_seconds))
         db.session.commit()
         delete_video_cache()
@@ -573,7 +544,6 @@ def add_video_watch_time(video_id):
         }), 200
         
     except Exception as e:
-        print(e)
         db.session.rollback()
         return jsonify({'error': 'Internal server error'}), 500
 
@@ -593,7 +563,6 @@ def get_video_watch_time(video_id):
         if video.status != VideoStatus.PUBLISHED:
             return jsonify({'error': 'Only published videos can have watch time'}), 400
         
-        # Get all watch time entries for this video
         watch_times = VideoWatchTime.query.filter_by(video_id=video_id).all()
         
         return jsonify({
@@ -622,7 +591,6 @@ def delete_video_comment(comment_id):
         if not comment:
             return jsonify({'error': 'Comment not found'}), 404
         
-        # Check if the user is the commenter
         if comment.commented_by != user.id:
             return jsonify({'error': 'You can only delete your own comments'}), 403
         

@@ -1,6 +1,6 @@
 import requests
 import os
-from datetime import datetime, timedelta
+
 from app import cache
 from app.models import Blog, BlogStatus
 
@@ -31,16 +31,17 @@ def get_trending_blogs():
         trending_blogs = Blog.query.filter(
             Blog.archived == False,
             Blog.status == BlogStatus.PUBLISHED,
-            Blog.created_at > datetime.utcnow() - timedelta(days=7),
+            # Blog.created_at > datetime.utcnow() - timedelta(days=7),
             Blog.views >= 1,
             Blog.likes >= 1
         ).order_by(Blog.views.desc()).limit(10).all()
         return trending_blogs
-    except Exception as e:
-        print(f"Error getting trending blogs: {e}")
+    except:
         return []
     
 def delete_blog_cache():
     redis_client = cache.cache._write_client
+    for key in redis_client.scan_iter("flock_platform_content*"):
+        redis_client.delete(key)
     for key in redis_client.scan_iter("flock_platform_get_all_blogs*"):
         redis_client.delete(key)

@@ -24,7 +24,6 @@ class StripeService:
                 business_type='individual'
             )
             
-            # Save to database
             stripe_account = StripeAccount(
                 creator_id=creator_id,
                 stripe_account_id=account.id,
@@ -36,7 +35,6 @@ class StripeService:
             return account
             
         except stripe.error.StripeError as e:
-            print(f"Error creating Stripe account: {e}")
             db.session.rollback()
             raise e
     
@@ -52,22 +50,18 @@ class StripeService:
             return account_link
             
         except stripe.error.StripeError as e:
-            print(f"Error creating account link: {e}")
             raise e
         
     def delete_account(self, stripe_account_id):
         """Delete a Stripe account (for cleanup)"""
         try:
             stripe.Account.delete(stripe_account_id)
-            print(f"Deleted Stripe account: {stripe_account_id}")
         except stripe.error.StripeError as e:
-            print(f"Error deleting account: {e}")
             raise e
     
     def process_withdrawal(self, creator_id, amount):
         """Process a withdrawal request"""
         try:
-            # Get creator's Stripe account
             stripe_account = StripeAccount.query.filter_by(creator_id=creator_id).first()
             if not stripe_account:
                 raise ValueError("Creator doesn't have a Stripe account")
@@ -75,7 +69,6 @@ class StripeService:
             if not stripe_account.payouts_enabled:
                 raise ValueError("Creator's Stripe account is not ready for payouts")
             
-            # Create withdrawal request
             withdrawal = WithdrawalRequest(
                 creator_id=creator_id,
                 amount=amount,
@@ -84,9 +77,8 @@ class StripeService:
             db.session.add(withdrawal)
             db.session.commit()
             
-            # Create transfer to creator's Stripe account
             transfer = stripe.Transfer.create(
-                amount=int(amount * 100),  # Convert to cents
+                amount=int(amount * 100),
                 currency='usd',
                 destination=stripe_account.stripe_account_id,
                 description=f'Withdrawal for creator {creator_id}',
@@ -96,7 +88,6 @@ class StripeService:
                 }
             )
             
-            # Update withdrawal with transfer ID
             withdrawal.stripe_transfer_id = transfer.id
             withdrawal.status = 'completed'
             withdrawal.processed_at = datetime.utcnow()
@@ -105,7 +96,6 @@ class StripeService:
             return withdrawal
             
         except stripe.error.StripeError as e:
-            print(f"Error processing withdrawal: {e}")
             if 'withdrawal' in locals():
                 withdrawal.status = 'failed'
                 withdrawal.failure_reason = str(e)
@@ -124,5 +114,4 @@ class StripeService:
                 'details_submitted': account.details_submitted
             }
         except stripe.error.StripeError as e:
-            print(f"Error retrieving account status: {e}")
             raise e

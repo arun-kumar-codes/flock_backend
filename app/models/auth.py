@@ -1,7 +1,8 @@
 import bcrypt
-from enum import Enum
 from datetime import datetime
+from enum import Enum
 from sqlalchemy import Table, Column, Integer, ForeignKey, DateTime
+
 from app import db
 
 class UserRole(Enum):
@@ -160,7 +161,6 @@ class User(db.Model):
             'following_count': self.get_following_count()
         }
         
-        # Add earnings info for creators
         if self.role == UserRole.CREATOR:
             base_dict.update({
                 'total_earnings': self.get_total_earnings(),

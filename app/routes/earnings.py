@@ -1,10 +1,9 @@
-from firebase_admin.auth import EmailAlreadyExistsError
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from app import db
 from app.models import User, CreatorEarnings, CPMConfig, StripeAccount, WithdrawalRequest
-from app.services import StripeService, stripe_service
+from app.services import StripeService
 from app.utils import creator_required
 
 earnings_bp = Blueprint('earnings', __name__)
@@ -79,17 +78,13 @@ def setup_stripe_account():
         return jsonify({'error': 'Creator not found'}), 404
     
     try:
-        # Check if already has Stripe account
         existing_account = StripeAccount.query.filter_by(creator_id=creator.id).first()
         
         if existing_account:
-            # Account exists - check if we need to regenerate onboarding link
             if existing_account.account_status == 'pending':
-                # Account exists but onboarding incomplete - regenerate link
                 stripe_service = StripeService()
                 
                 try:
-                    # Get fresh onboarding link for existing account
                     account_link = stripe_service.get_account_link(
                         stripe_account_id=existing_account.stripe_account_id,
                         refresh_url="http://116.202.210.102:3001/dashboard/payout",
@@ -105,9 +100,6 @@ def setup_stripe_account():
                     })
                     
                 except Exception as e:
-                    # If there's an issue with existing account, create new one
-                    # logger.warning(f"Error with existing account {existing_account.stripe_account_id}: {e}") # Original code had this line commented out
-                    # Delete old account and create new one
                     stripe_service.delete_account(existing_account.stripe_account_id)
                     db.session.delete(existing_account)
                     db.session.commit()
@@ -118,14 +110,12 @@ def setup_stripe_account():
                     'status': 'already_active'
                 }), 400
         
-        # No existing account or need to create new one
         stripe_service = StripeService()
         account = stripe_service.create_connect_account(
             creator_id=creator.id,
             email=creator.email
         )
         
-        # Generate onboarding link
         account_link = stripe_service.get_account_link(
             stripe_account_id=account.id,
             refresh_url="http://116.202.210.102:3001/dashboard/payout",
@@ -141,7 +131,6 @@ def setup_stripe_account():
         })
         
     except Exception as e:
-        print(e)
         return jsonify({'error': str(e)}), 500
 
 @earnings_bp.route('/stripe-account', methods=['GET'])
@@ -177,7 +166,6 @@ def get_stripe_account_status():
         stripe_service = StripeService()
         status = stripe_service.get_account_status(stripe_account.stripe_account_id)
         
-        # Update local status
         stripe_account.charges_enabled = status['charges_enabled']
         stripe_account.payouts_enabled = status['payouts_enabled']
         stripe_account.account_status = 'active' if status['charges_enabled'] and status['payouts_enabled']   else 'pending'
@@ -229,12 +217,10 @@ def request_withdrawal():
     if not amount or amount <= 0:
         return jsonify({'error': 'Invalid amount'}), 400
     
-    # Check if creator has enough earnings
     available_earnings = creator.get_total_earnings()
     if amount > available_earnings:
         return jsonify({'error': 'Insufficient earnings'}), 400
     
-    # Check if creator has Stripe account
     stripe_account = StripeAccount.query.filter_by(creator_id=creator.id).first()
     if not stripe_account:
         return jsonify({'error': 'Please setup Stripe account first'}), 400
@@ -280,7 +266,6 @@ def get_available_for_withdrawal():
     
     total_earnings = creator.get_total_earnings()
     
-    # Calculate all withdrawals (pending + completed)
     all_withdrawals = db.session.query(db.func.sum(WithdrawalRequest.amount))\
         .filter_by(creator_id=creator.id)\
         .filter(WithdrawalRequest.status.in_(['processing', 'completed']))\
@@ -289,7 +274,6 @@ def get_available_for_withdrawal():
     total_withdrawn = float(all_withdrawals) if all_withdrawals else 0.0
     available_amount = total_earnings - total_withdrawn
     
-    # Get breakdown for transparency
     pending_withdrawals = db.session.query(db.func.sum(WithdrawalRequest.amount))\
         .filter_by(creator_id=creator.id, status='processing')\
         .scalar()

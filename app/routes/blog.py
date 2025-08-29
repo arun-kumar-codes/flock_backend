@@ -6,7 +6,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from app import db, cache
 from app.models import Blog, User, BlogStatus, Comment, UserRole
-from app.utils import creator_required, allowed_file, admin_required, delete_previous_image, get_trending_blogs, delete_blog_cache
+from app.utils import creator_required, allowed_file, admin_required, delete_previous_image, delete_blog_cache
 
 blog_bp = Blueprint('blog', __name__)
 
@@ -33,7 +33,6 @@ def create_blog():
         if len(title) > 200:
             return jsonify({'error': 'Title must be less than 200 characters'}), 400
         
-        # Handle image upload
         image_path = None
         if image_file and image_file.filename != '':
             if not allowed_file(image_file.filename):
@@ -50,7 +49,7 @@ def create_blog():
                 image_path = response.json()['result']['variants'][0]
             else:
                 return jsonify({'error': 'Image upload failed'}), 400
-        # Create new blog with draft status and not archived
+
         blog = Blog(
             title=title,
             content=content,
@@ -88,20 +87,16 @@ def update_blog(blog_id):
         if not blog:
             return jsonify({'error': 'Blog not found'}), 404
         
-        # Check if the user is the creator of the blog
         if blog.created_by != user.id:
             return jsonify({'error': 'You can only update your own blogs'}), 403
         
-        # Check if blog can be updated (draft or rejected status only)
         if blog.status not in [BlogStatus.DRAFT]:
             return jsonify({'error': 'Only draft blogs can be updated'}), 400
         
-        # Get form data for updates
         title = request.form.get('title')
         content = request.form.get('content')
         image_file = request.files.get('image')
         
-        # Update fields if provided
         if title is not None:
             if len(title) > 200:
                 return jsonify({'error': 'Title must be less than 200 characters'}), 400
@@ -110,7 +105,6 @@ def update_blog(blog_id):
         if content is not None:
             blog.content = content
         
-        # Handle image update
         if image_file and image_file.filename != '':
             if not allowed_file(image_file.filename):
                 return jsonify({'error': 'Invalid file type. Allowed types: png, jpg, jpeg, gif, webp'}), 400
@@ -157,11 +151,9 @@ def publish_blog(blog_id):
         if not blog:
             return jsonify({'error': 'Blog not found'}), 404
         
-        # Check if blog is pending approval
         if blog.status != BlogStatus.DRAFT:
             return jsonify({'error': 'Only draft blogs can be published'}), 400
         
-        # Approve the blog
         if blog.publish():
             db.session.commit()
             delete_blog_cache()
@@ -193,13 +185,12 @@ def reject_blog(blog_id):
         if not blog:
             return jsonify({'error': 'Blog not found'}), 404
         
-        # Check if blog is published
         if blog.status != BlogStatus.PUBLISHED:
             return jsonify({'error': 'Only published blogs can be rejected'}), 400
         reason = request.json.get('reason')
         if not reason:
             return jsonify({'error': 'Reason is required'}), 400
-        # Reject the blog
+
         if blog.reject(reason):
             db.session.commit()
             delete_blog_cache()
@@ -211,7 +202,6 @@ def reject_blog(blog_id):
             return jsonify({'error': 'Failed to reject blog'}), 400
         
     except Exception as e:
-        print(e)
         db.session.rollback()
         return jsonify({'error': 'Internal server error'}), 500
 
@@ -232,15 +222,12 @@ def archive_blog(blog_id):
         if not blog:
             return jsonify({'error': 'Blog not found'}), 404
         
-        # Check if the user is the creator of the blog
         if blog.created_by != user.id:
             return jsonify({'error': 'You can only archive your own blogs'}), 403
         
-        # Check if blog is already archived
         if blog.archived:
             return jsonify({'error': 'Blog is already archived'}), 400
         
-        # Archive the blog
         if blog.archive():
             db.session.commit()
             delete_blog_cache()
@@ -272,15 +259,12 @@ def unarchive_blog(blog_id):
         if not blog:
             return jsonify({'error': 'Blog not found'}), 404
         
-        # Check if the user is the creator of the blog
         if blog.created_by != user.id:
             return jsonify({'error': 'You can only unarchive your own blogs'}), 403
         
-        # Check if blog is not archived
         if not blog.archived:
             return jsonify({'error': 'Blog is not archived'}), 400
         
-        # Unarchive the blog
         if blog.unarchive():
             db.session.commit()
             delete_blog_cache()
@@ -312,13 +296,11 @@ def delete_blog(blog_id):
         if not blog:
             return jsonify({'error': 'Blog not found'}), 404
         
-        # Check if the user is the creator of the blog
         if blog.created_by != user.id:
             return jsonify({'error': 'You can only delete your own blogs'}), 403
         
         if blog.delete():
             delete_blog_cache()
-            print("cache deleted")
             return jsonify({
                 'message': 'Blog deleted successfully',
                 'blog': blog.to_dict(user.id)
@@ -348,7 +330,6 @@ def get_blog(blog_id):
         }), 200
         
     except Exception as e:
-        print(e)
         return jsonify({'error': 'Internal server error'}), 500
 
 
@@ -382,7 +363,6 @@ def add_blog_view(blog_id):
         }), 200
         
     except Exception as e:
-        print(e)
         return jsonify({'error': 'Internal server error'}), 500
 
 
@@ -395,25 +375,14 @@ def get_all_blogs():
         email = get_jwt_identity()
         user = User.query.filter_by(email=email).first()
         
-        # Get query parameters
         status_filter = request.args.get('status')
-        trending = request.args.get('trending')
         creator_id = request.args.get('creator_id')
-        if trending:
-            trending_blogs = get_trending_blogs()
-            return jsonify({
-                'blogs': [blog.to_dict(user.id if user else None) for blog in trending_blogs]
-            }), 200
         
-        
-        # Build query - exclude archived blogs and draft blogs
         query = Blog.query.filter_by(archived=False).filter(Blog.status != BlogStatus.DRAFT).order_by(Blog.created_at.desc())
         if creator_id:
             query = query.filter_by(created_by=creator_id)
         
-        # Apply status filter if provided
         if status_filter:
-            # Convert string to enum value
             try:
                 status_enum = BlogStatus(status_filter)
                 query = query.filter_by(status=status_enum)
@@ -466,13 +435,10 @@ def toggle_like_blog(blog_id):
         if not blog:
             return jsonify({'error': 'Blog not found'}), 404
         
-        # Check if user has already liked the blog
         if blog.is_liked_by(user.id):
-            # Unlike the blog
             blog.remove_like(user.id)
             action = 'unliked'
         else:
-            # Like the blog
             blog.add_like(user.id)
             action = 'liked'
         
@@ -504,7 +470,6 @@ def create_comment(blog_id):
         if not blog:
             return jsonify({'error': 'Blog not found'}), 404
         
-        # Check if blog is published (only published blogs can be commented on)
         if blog.status != BlogStatus.PUBLISHED:
             return jsonify({'error': 'Comments can only be added to published blogs'}), 400
         
@@ -515,7 +480,6 @@ def create_comment(blog_id):
         if len(comment_text.strip()) == 0:
             return jsonify({'error': 'Comment cannot be empty'}), 400
         
-        # Create new comment
         comment = Comment(
             comment=comment_text.strip(),
             commented_by=user.id,
@@ -549,7 +513,6 @@ def edit_comment(comment_id):
         if not comment:
             return jsonify({'error': 'Comment not found'}), 404
         
-        # Check if the user is the author of the comment
         if comment.commented_by != user.id:
             return jsonify({'error': 'You can only edit your own comments'}), 403
         
@@ -560,7 +523,6 @@ def edit_comment(comment_id):
         if len(new_comment_text.strip()) == 0:
             return jsonify({'error': 'Comment cannot be empty'}), 400
         
-        # Update the comment
         comment.comment = new_comment_text.strip()
         db.session.commit()
         delete_blog_cache()
@@ -589,11 +551,9 @@ def delete_comment(comment_id):
         if not comment:
             return jsonify({'error': 'Comment not found'}), 404
         
-        # Check if the user is the author of the comment or an admin
         if comment.commented_by != user.id and user.role != UserRole.ADMIN:
             return jsonify({'error': 'You can only delete your own comments'}), 403
         
-        # Delete the comment
         db.session.delete(comment)
         db.session.commit()
         delete_blog_cache()
@@ -603,4 +563,40 @@ def delete_comment(comment_id):
         
     except Exception as e:
         db.session.rollback()
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@blog_bp.route('/image-embedding', methods=['POST'])
+@jwt_required()
+@creator_required
+def blog_image_embedding():
+    """Embed images in blog posts"""
+    try:
+        image_files = request.files.getlist('images')
+        if not image_files:
+            return jsonify({'error': 'No images provided'}), 400
+        
+        images = {}
+        for image_file in image_files:
+            image_path = None
+            if image_file and image_file.filename != '':
+                if not allowed_file(image_file.filename):
+                    return jsonify({'error': 'Invalid file type. Allowed types: png, jpg, jpeg, gif, webp'}), 400
+            
+            headers = {
+                "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}"
+            }
+            files = {
+                "file": (image_file.filename, image_file.stream, image_file.content_type)
+            }
+            response = requests.post(CLOUDFLARE_IMAGE_URL, headers=headers, files=files)
+            if response.status_code == 200:
+                image_path = response.json()['result']['variants'][0]
+                images[image_file.filename] = image_path
+            else:
+                return jsonify({'error': 'Image Embedding failed'}), 400
+            
+        return jsonify({'message': 'Images embedded successfully', 'images': images}), 200
+    
+    except Exception as e:
         return jsonify({'error': 'Internal server error'}), 500

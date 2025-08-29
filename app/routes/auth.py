@@ -7,7 +7,7 @@ import requests
 from app import db
 from app.models import User, UserRole, Invitation, Video, Blog, VideoStatus, BlogStatus
 from app.utils import admin_required, creator_required, delete_video_cache
-from app.utils.blog import allowed_file, delete_blog_cache, delete_previous_image
+from app.utils import allowed_file, delete_blog_cache, delete_previous_image
 import firebase_setup
 
 auth_bp = Blueprint('auth', __name__)
@@ -26,7 +26,6 @@ def signup():
         if not data:
             return jsonify({'error': 'No data provided'}), 400
         
-        # Validate required fields
         username = data.get('username')
         email = data.get('email')
         password = data.get('password')
@@ -50,14 +49,12 @@ def signup():
         if not response.json().get('success'):
             return jsonify({'error': 'Invalid captcha'}), 400
 
-        # Check if user already exists
         if User.query.filter_by(username=username).first():
             return jsonify({'error': 'Username already exists'}), 400
         
         if User.query.filter_by(email=email).first():
             return jsonify({'error': 'Email already exists'}), 400
         
-        # Create new user
         user_role = UserRole(role)
         user = User(
             username=username,
@@ -69,7 +66,6 @@ def signup():
         db.session.add(user)
         db.session.commit()
         
-        # Return response
         response_data = {
             'user': user.to_dict()
         }
@@ -87,7 +83,6 @@ def login():
         decoded_token = firebase_auth.verify_id_token(id_token)
         email = decoded_token.get('email')
 
-        # Check if user exists
         is_new_user = False
         user = User.query.filter_by(email=email).first()
         if not user:
@@ -160,17 +155,14 @@ def update_profile():
         username = request.form.get('username')
         profile_picture_file = request.files.get('profile_picture')
         
-        # At least one field should be provided
         if username is None and profile_picture_file is None:
             return jsonify({'error': 'At least one field (username or profile_picture) is required'}), 400
             
-        # Check if username is being changed and if it already exists
         if username is not None:
             existing_user = User.query.filter_by(username=username).first()
             if existing_user and existing_user.email != email:
                 return jsonify({'error': 'Username already exists'}), 400
         
-        # Handle profile picture upload
         profile_picture_path = None
         if profile_picture_file and profile_picture_file.filename != '':
             if not allowed_file(profile_picture_file.filename):
@@ -216,7 +208,6 @@ def login_password():
         if not identifier or not password:
             return jsonify({'error': 'Username/email and password are required'}), 400
         
-        # Find user by email or username
         user = User.query.filter_by(email=identifier).first()
         if not user:
             user = User.query.filter_by(username=identifier).first()
@@ -234,7 +225,6 @@ def login_password():
         if not response.json().get('success'):
             return jsonify({'error': 'Invalid captcha'}), 400 
         
-        # Generate JWT tokens
         access_token = create_access_token(identity=user.email)
         refresh_token = create_refresh_token(identity=user.email)
         
@@ -262,7 +252,6 @@ def refresh():
         if not user:
             return jsonify({'error': 'User not found'}), 404
         
-        # Create new access token
         access_token = create_access_token(identity=user.email)
         
         return jsonify({
@@ -330,14 +319,12 @@ def delete_user(id):
     """Delete user"""
     try:
         user = User.query.filter_by(id=id).first()
-        print(user)
         if not user:
             return jsonify({'error': 'User not found'}), 404
         db.session.delete(user)
         db.session.commit()
         return jsonify({'message': 'User deleted successfully'}), 200
     except Exception as e:
-        print(e)
         db.session.rollback()
         return jsonify({'error': 'Internal server error'}), 500
 
@@ -353,29 +340,22 @@ def get_creator_data():
         if not user:
             return jsonify({'error': 'User not found'}), 404
         
-        # Get all videos by the creator
         videos = Video.query.filter_by(created_by=user.id).all()
         
-        # Get all blogs by the creator
         blogs = Blog.query.filter_by(created_by=user.id).all()
         
-        # Calculate video statistics
         total_videos = len(videos)
         published_videos = len([v for v in videos if v.status == VideoStatus.PUBLISHED])
         draft_videos = len([v for v in videos if v.status == VideoStatus.DRAFT])
-        pending_videos = len([v for v in videos if v.status == VideoStatus.PENDING_APPROVAL])
         rejected_videos = len([v for v in videos if v.status == VideoStatus.REJECTED])
         archived_videos = len([v for v in videos if v.archived])
         
-        # Calculate blog statistics
         total_blogs = len(blogs)
         published_blogs = len([b for b in blogs if b.status == BlogStatus.PUBLISHED])
         draft_blogs = len([b for b in blogs if b.status == BlogStatus.DRAFT])
-        pending_blogs = len([b for b in blogs if b.status == BlogStatus.PENDING_APPROVAL])
         rejected_blogs = len([b for b in blogs if b.status == BlogStatus.REJECTED])
         archived_blogs = len([b for b in blogs if b.archived])
         
-        # Calculate total likes and views
         total_video_likes = sum(video.likes for video in videos)
         total_video_views = sum(video.views for video in videos)
         total_video_watch_time = sum(video.total_watch_time for video in videos)
@@ -390,7 +370,6 @@ def get_creator_data():
                     'total': total_videos,
                     'published': published_videos,
                     'draft': draft_videos,
-                    'pending_approval': pending_videos,
                     'rejected': rejected_videos,
                     'archived': archived_videos,
                     'total_likes': total_video_likes,
@@ -401,7 +380,6 @@ def get_creator_data():
                     'total': total_blogs,
                     'published': published_blogs,
                     'draft': draft_blogs,
-                    'pending_approval': pending_blogs,
                     'rejected': rejected_blogs,
                     'archived': archived_blogs,
                     'total_likes': total_blog_likes,
@@ -431,21 +409,17 @@ def follow_user(user_id):
         if not user:
             return jsonify({'error': 'User not found'}), 404
         
-        # Get the user to follow
         user_to_follow = User.query.get(user_id)
         
         if not user_to_follow:
             return jsonify({'error': 'User to follow not found'}), 404
         
-        # Check if trying to follow self
         if user.id == user_id:
             return jsonify({'error': 'Cannot follow yourself'}), 400
         
-        # Check if already following
         if user.is_following(user_to_follow):
             return jsonify({'error': 'Already following this user'}), 400
         
-        # Follow the user
         success = user.follow(user_to_follow)
         
         if success:
@@ -474,21 +448,17 @@ def unfollow_user(user_id):
         if not user:
             return jsonify({'error': 'Current user not found'}), 404
         
-        # Get the user to unfollow
         user_to_unfollow = User.query.get(user_id)
         
         if not user_to_unfollow:
             return jsonify({'error': 'User to unfollow not found'}), 404
         
-        # Check if trying to unfollow self
         if user.id == user_id:
             return jsonify({'error': 'Cannot unfollow yourself'}), 400
         
-        # Check if not following
         if not user.is_following(user_to_unfollow):
             return jsonify({'error': 'Not following this user'}), 400
         
-        # Unfollow the user
         success = user.unfollow(user_to_unfollow)
         
         if success:

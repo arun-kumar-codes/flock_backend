@@ -15,7 +15,6 @@ class CreatorEarnings(db.Model):
     cpm_rate_used = db.Column(Numeric(10, 4), nullable=False)
     calculated_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    # Relationships
     creator = db.relationship('User', backref=db.backref('earnings', lazy=True))
     video = db.relationship('Video', backref=db.backref('earnings', lazy=True, passive_deletes=True))
     

@@ -17,21 +17,16 @@ def send_invitation_email(to_email: str) -> bool:
         bool: True if email sent successfully and invitation created, False otherwise
     """
     try:
-        # Check if invitation already exists
         existing_invitation = Invitation.query.filter_by(email=to_email).first()
         if not existing_invitation:
-            # Create invitation record
             invitation = Invitation(email=to_email)
             db.session.add(invitation)
             db.session.commit()
 
-        # Resend configuration
         resend.api_key = os.getenv('RESEND_API_KEY')
         
-        # Email content
         subject = "You're Invited to Join Flock Platform!"
         
-        # Plain text version
         body = f"""
 
         Hi there,
@@ -52,7 +47,6 @@ def send_invitation_email(to_email: str) -> bool:
         The Flock Platform Team
         """
         
-        # HTML version
         html_body = f"""
         <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
@@ -89,7 +83,6 @@ def send_invitation_email(to_email: str) -> bool:
         </html>
         """
         
-         # Send email via Resend
         params: resend.Emails.SendParams = {
         "from": "onboarding@resend.dev",
         "to": [to_email],
@@ -102,7 +95,5 @@ def send_invitation_email(to_email: str) -> bool:
         return True
         
     except Exception as e:
-        # Rollback database changes if email sending fails
         db.session.rollback()
-        print(f"Failed to send invitation email to {to_email}: {str(e)}")
         return False

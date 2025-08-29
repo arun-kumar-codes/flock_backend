@@ -1,5 +1,6 @@
 from datetime import datetime
 from sqlalchemy import Numeric
+
 from app import db
 
 class CPMConfig(db.Model):
@@ -13,7 +14,6 @@ class CPMConfig(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     updated_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     
-    # Relationship with User (admin who updated)
     admin = db.relationship('User', backref=db.backref('cpm_updates', lazy=True))
     
     def __init__(self, cpm_rate=2.00, updated_by=None):

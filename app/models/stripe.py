@@ -1,5 +1,6 @@
 from datetime import datetime
 from sqlalchemy import Numeric, Text
+
 from app import db
 
 class StripeAccount(db.Model):
@@ -9,13 +10,12 @@ class StripeAccount(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     creator_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, unique=True)
     stripe_account_id = db.Column(db.String(255), nullable=False, unique=True)
-    account_status = db.Column(db.String(50), default='pending')  # pending, active, restricted
+    account_status = db.Column(db.String(50), default='pending')
     charges_enabled = db.Column(db.Boolean, default=False)
     payouts_enabled = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Relationships
     creator = db.relationship('User', backref=db.backref('stripe_account', lazy=True))
     
     def to_dict(self):
@@ -38,12 +38,11 @@ class WithdrawalRequest(db.Model):
     creator_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     amount = db.Column(Numeric(10, 2), nullable=False)
     stripe_transfer_id = db.Column(db.String(255), nullable=True)
-    status = db.Column(db.String(50), default='pending')  # pending, processing, completed, failed
+    status = db.Column(db.String(50), default='pending')
     failure_reason = db.Column(Text, nullable=True)
     requested_at = db.Column(db.DateTime, default=datetime.utcnow)
     processed_at = db.Column(db.DateTime, nullable=True)
     
-    # Relationships
     creator = db.relationship('User', backref=db.backref('withdrawal_requests', lazy=True))
     
     def to_dict(self):

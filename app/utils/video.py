@@ -2,6 +2,7 @@ import subprocess
 from datetime import datetime, timedelta
 
 from flask import jsonify
+
 from app import cache
 from app.models import Video, VideoStatus
 
@@ -17,9 +18,8 @@ def get_video_duration(file_path):
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         duration = float(result.stdout.strip())
-        return int(duration)  # Return duration in seconds as integer
+        return int(duration)
     except (subprocess.CalledProcessError, ValueError, FileNotFoundError):
-        # Return None if ffprobe is not available or fails
         return None
     
 def transcode_video(file_path, transcoded_path):
@@ -44,11 +44,12 @@ def get_trending_videos():
             Video.likes >= 1
         ).order_by(Video.views.desc()).limit(10).all()
         return trending_videos
-    except Exception as e:
-        print(f"Error getting trending videos: {e}")
+    except:
         return []
     
 def delete_video_cache():
     redis_client = cache.cache._write_client
+    for key in redis_client.scan_iter("flock_platform_content*"):
+        redis_client.delete(key)
     for key in redis_client.scan_iter("flock_platform_get_all_videos*"):
         redis_client.delete(key)

@@ -31,10 +31,7 @@ class Blog(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     
-    # Relationship with User (author)
     author = db.relationship('User', backref=db.backref('blogs', lazy=True))
-    
-    # Relationship with Comment (one-to-many)
     comments = db.relationship('Comment', backref='blog', lazy=True, cascade='all, delete-orphan')
     
     def __init__(self, title, content, created_by, image=None, is_draft=False):
@@ -158,7 +155,6 @@ class Comment(db.Model):
     commented_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     blog_id = db.Column(db.Integer, db.ForeignKey('blogs.id'), nullable=False)
     
-    # Relationship with User (commenter)
     commenter = db.relationship('User', backref=db.backref('comments', lazy=True, cascade='all, delete-orphan'))
     
     def __init__(self, comment, commented_by, blog_id):

@@ -19,7 +19,6 @@ def get_cpm_config():
     """Get current CPM configuration"""
     config = CPMConfig.get_active_config()
     if not config:
-        # Create default config if none exists
         config = CPMConfig(cpm_rate=2.00)
         db.session.add(config)
         db.session.commit()
@@ -47,13 +46,11 @@ def update_cpm_config():
     if not user:
         return jsonify({'error': 'User not found'}), 404
     
-    # Deactivate current config
     current_config = CPMConfig.get_active_config()
     if current_config:
         current_config.is_active = False
         current_config.updated_by = user.id
     
-    # Create new config
     new_config = CPMConfig(
         cpm_rate=Decimal(str(cpm_rate)),
         updated_by=user.id

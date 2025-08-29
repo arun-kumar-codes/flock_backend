@@ -35,13 +35,8 @@ class Video(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     
-    # Relationship with User (creator)
-    creator = db.relationship('User', backref=db.backref('videos', lazy=True))
-    
-    # Relationship with VideoComment (one-to-many)
+    creator = db.relationship('User', backref=db.backref('videos', lazy=True)) 
     comments = db.relationship('VideoComment', backref='video', lazy=True, cascade='all, delete-orphan')
-    
-    # Relationship with VideoWatchTime (one-to-many)
     watch_times = db.relationship('VideoWatchTime', backref='video', lazy=True, cascade='all, delete-orphan')
     
     def __init__(self, title, video, created_by, description=None, thumbnail=None, 
@@ -83,7 +78,6 @@ class Video(db.Model):
             db.session.commit()
             return True
         except Exception as e:
-            print(e)
             db.session.rollback()
             return False
     
@@ -118,22 +112,17 @@ class Video(db.Model):
     def calculate_earnings_for_watch_time(self, watch_time_seconds):
         """Calculate earnings for watch time and create earnings entry"""
         
-        # Convert seconds to minutes
         watch_time_minutes = watch_time_seconds / 60.0
         
-        # Get current CPM rate
         from app.models import CreatorEarnings, CPMConfig
         cpm_config = CPMConfig.get_active_config()
         if not cpm_config:
-            # Use default rate if no config exists
             cpm_rate = Decimal('2.00')
         else:
             cpm_rate = cpm_config.cpm_rate
         
-        # Calculate earnings: (watch_time_minutes / 1000) * cpm_rate
         earnings = (Decimal(str(watch_time_minutes)) / Decimal('1000')) * cpm_rate
         
-        # Create earnings entry
         earnings_entry = CreatorEarnings(
             creator_id=self.created_by,
             video_id=self.id,
@@ -147,21 +136,18 @@ class Video(db.Model):
 
     def add_watch_time(self, user_id, watch_time_seconds):
         """Add watch time from a user"""
-        # Create watch time entry
         watch_time_entry = VideoWatchTime.query.filter_by(
             video_id=self.id, 
             user_id=user_id
         ).first()
         
         if not watch_time_entry:
-            # Create new entry
             watch_time_entry = VideoWatchTime(
                 video_id=self.id,
                 user_id=user_id,
                 watch_time=watch_time_seconds
             )
             db.session.add(watch_time_entry)
-            # Update total watch time for the video
             self.calculate_earnings_for_watch_time(watch_time_seconds)
             self.total_watch_time += watch_time_seconds
             
@@ -267,11 +253,10 @@ class VideoWatchTime(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     video_id = db.Column(db.Integer, db.ForeignKey('videos.id'), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
     watch_time = db.Column(db.Integer, default=0)
     last_watched = db.Column(db.DateTime, default=datetime.utcnow)
     
-    # Relationship with User (viewer)
     viewer = db.relationship('User', backref=db.backref('video_watch_times', lazy=True))
     
     def __init__(self, video_id, user_id, watch_time=0):
@@ -305,7 +290,6 @@ class VideoComment(db.Model):
     commented_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     video_id = db.Column(db.Integer, db.ForeignKey('videos.id'), nullable=False)
     
-    # Relationship with User (commenter)
     commenter = db.relationship('User', backref=db.backref('video_comments', lazy=True, cascade='all, delete-orphan'))
     
     def __init__(self, comment, commented_by, video_id):
