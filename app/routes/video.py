@@ -95,7 +95,7 @@ def create_video():
                 video=playback_url,
                 thumbnail=cloudflare_data['result']['thumbnail'],
                 created_by=user.id,
-                is_draft=is_draft == 'true',
+                is_draft=is_draft == 'true' or is_scheduled,
                 is_scheduled=is_scheduled,
                 scheduled_at=scheduled_at
             )
