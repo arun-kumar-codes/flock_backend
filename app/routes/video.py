@@ -1,7 +1,7 @@
 import os
 import requests
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
@@ -27,6 +27,7 @@ def create_video():
         video_file = request.files.get('video')
         title = request.form.get('title')
         is_draft = request.form.get('is_draft')
+        scheduled_at_str = request.form.get('scheduled_at')
 
         if not video_file or not title:
             return jsonify({'error': 'Missing title or video'}), 400
@@ -36,6 +37,20 @@ def create_video():
         # user_videos_count = Video.query.filter_by(created_by=user.id).count()
         # if user_videos_count >= 5:
         #     return jsonify({'error': 'You can only upload a maximum of 5 videos'}), 400
+        
+        # Parse scheduled_at if provided
+        scheduled_at = None
+        is_scheduled = False
+        
+        if scheduled_at_str:
+            try:
+                scheduled_at = datetime.fromisoformat(scheduled_at_str.replace('Z', '+00:00'))
+                if scheduled_at <= datetime.now(timezone.utc):
+                    return jsonify({'error': 'Scheduled time must be in the future'}), 400
+                is_scheduled = True
+                is_draft = True  # Scheduled videos are always drafts initially
+            except ValueError:
+                return jsonify({'error': 'Invalid scheduled_at format. Use ISO format (e.g., 2025-01-15T14:30:00Z)'}), 400
         
         allowed_video_types = {'mp4', 'mov'}
         ext = video_file.filename.lower().split('.')[-1]
@@ -80,13 +95,19 @@ def create_video():
                 video=playback_url,
                 thumbnail=cloudflare_data['result']['thumbnail'],
                 created_by=user.id,
-                is_draft=is_draft == 'true'
+                is_draft=is_draft == 'true',
+                is_scheduled=is_scheduled,
+                scheduled_at=scheduled_at
             )
             db.session.add(video)
             db.session.commit()
             delete_video_cache()
-
-        return jsonify({'message': 'Video uploaded successfully', 'url': playback_url}), 201
+            
+            message = 'Video uploaded successfully'
+            if is_scheduled:
+                message = 'Video scheduled successfully'
+        
+        return jsonify({'message': message, 'video': video.to_dict(user.id)}), 201
 
     except Exception as e:
         db.session.rollback()

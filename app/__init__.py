@@ -30,6 +30,12 @@ def create_app(config_name='default'):
     # Load configuration
     app.config.from_object(config[config_name])
     
+    # Add scheduler configuration
+    app.config.update({
+        'SCHEDULER_API_ENABLED': True,
+        'SCHEDULER_TIMEZONE': 'UTC',
+        })
+    
     # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
@@ -54,4 +60,8 @@ def create_app(config_name='default'):
     app.register_blueprint(cpm_bp, url_prefix='/api/cpm')
     app.register_blueprint(earnings_bp, url_prefix='/api/earnings')
     app.register_blueprint(stripe_webhooks_bp, url_prefix='/api/stripe')
+    
+    with app.app_context():
+        from app.services import init_scheduler
+        init_scheduler(app)
     return app 

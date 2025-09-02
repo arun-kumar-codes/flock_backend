@@ -28,13 +28,15 @@ class Blog(db.Model):
     liked_by = db.Column(MutableList.as_mutable(ARRAY(db.Integer)), default=list)
     views = db.Column(db.Integer, default=0, index=True)
     viewed_by = db.Column(MutableList.as_mutable(ARRAY(db.Integer)), default=list)
+    scheduled_at = db.Column(db.DateTime, nullable=True, index=True)
+    is_scheduled = db.Column(db.Boolean, default=False, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     
     author = db.relationship('User', backref=db.backref('blogs', lazy=True))
     comments = db.relationship('Comment', backref='blog', lazy=True, cascade='all, delete-orphan')
     
-    def __init__(self, title, content, created_by, image=None, is_draft=False):
+    def __init__(self, title, content, created_by, image=None, is_draft=False, is_scheduled=False, scheduled_at=None):
         self.title = title
         self.content = content
         self.created_by = created_by
@@ -46,6 +48,8 @@ class Blog(db.Model):
         self.liked_by = []
         self.views = 0
         self.viewed_by = []
+        self.is_scheduled = is_scheduled
+        self.scheduled_at = scheduled_at
     
     def publish(self):
         """Publish the blog"""
@@ -115,6 +119,16 @@ class Blog(db.Model):
         if not requesting_user:
             return False
         return requesting_user.is_following(self.author)
+    
+    def publish_scheduled(self):
+        """Publish a scheduled blog when time comes"""
+        if self.is_scheduled and self.scheduled_at and datetime.utcnow() >= self.scheduled_at:
+            self.status = BlogStatus.PUBLISHED
+            self.is_draft = False
+            self.is_scheduled = False
+            self.scheduled_at = None
+            return True
+        return False
 
     def to_dict(self, user_id=None):
         """Convert blog to dictionary"""
@@ -135,6 +149,8 @@ class Blog(db.Model):
             'is_liked': self.is_liked_by(user_id) if user_id else False,
             'is_viewed': self.is_viewed_by(user_id) if user_id else False,
             'is_following_author': self.is_following_author(user_id) if user_id else False,
+            'is_scheduled': self.is_scheduled,
+            'scheduled_at': self.scheduled_at.isoformat() if self.scheduled_at else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'created_by': self.created_by,
             'author': self.author.to_dict() if self.author else None,

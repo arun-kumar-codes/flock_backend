@@ -1,5 +1,6 @@
 import os
 import requests
+from datetime import datetime, timezone
 
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -26,12 +27,28 @@ def create_blog():
         content = request.form.get('content')
         image_file = request.files.get('image')
         is_draft = request.form.get('is_draft')
+        scheduled_at_str = request.form.get('scheduled_at')
         
         if not title or not content:
             return jsonify({'error': 'Title and content are required'}), 400
         
         if len(title) > 200:
             return jsonify({'error': 'Title must be less than 200 characters'}), 400
+        
+        # Parse scheduled_at if provided
+        scheduled_at = None
+        is_scheduled = False
+        
+        if scheduled_at_str:
+            try:
+                scheduled_at = datetime.fromisoformat(scheduled_at_str.replace('Z', '+00:00'))
+                if scheduled_at <= datetime.now(timezone.utc):
+                    return jsonify({'error': 'Scheduled time must be in the future'}), 400
+                is_scheduled = True
+                is_draft = True  # Scheduled posts are always drafts initially
+            except ValueError:
+                return jsonify({'error': 'Invalid scheduled_at format. Use ISO format (e.g., 2025-01-15T14:30:00Z)'}), 400
+        
         
         image_path = None
         if image_file and image_file.filename != '':
@@ -55,14 +72,20 @@ def create_blog():
             content=content,
             created_by=user.id,
             image=image_path,
-            is_draft=is_draft == 'true'
+            is_draft=is_draft == 'true' or is_scheduled,
+            scheduled_at=scheduled_at,
+            is_scheduled=is_scheduled
         )
         db.session.add(blog)
         db.session.commit()
         delete_blog_cache()
         
+        message = 'Blog created successfully'
+        if is_scheduled:
+            message = 'Blog scheduled successfully'
+        
         return jsonify({
-            'message': 'Blog created successfully',
+            'message': message,
             'blog': blog.to_dict()
         }), 201
         

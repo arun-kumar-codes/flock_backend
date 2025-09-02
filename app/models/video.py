@@ -32,6 +32,8 @@ class Video(db.Model):
     total_watch_time = db.Column(db.Integer, default=0)
     liked_by = db.Column(MutableList.as_mutable(ARRAY(db.Integer)), default=list)
     viewed_by = db.Column(MutableList.as_mutable(ARRAY(db.Integer)), default=list)
+    scheduled_at = db.Column(db.DateTime, nullable=True, index=True)
+    is_scheduled = db.Column(db.Boolean, default=False, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     
@@ -40,7 +42,7 @@ class Video(db.Model):
     watch_times = db.relationship('VideoWatchTime', backref='video', lazy=True, cascade='all, delete-orphan')
     
     def __init__(self, title, video, created_by, description=None, thumbnail=None, 
-                 duration=None, format=None, is_draft=False):
+                 duration=None, format=None, is_draft=False, is_scheduled=False, scheduled_at=None):
         self.title = title
         self.video = video
         self.created_by = created_by
@@ -56,6 +58,8 @@ class Video(db.Model):
         self.total_watch_time = 0
         self.liked_by = []
         self.viewed_by = []
+        self.is_scheduled = is_scheduled
+        self.scheduled_at = scheduled_at
     
     def publish(self):
         """Publish the video"""
@@ -208,6 +212,16 @@ class Video(db.Model):
             return False
         return requesting_user.is_following(self.creator)
     
+    def publish_scheduled(self):
+        """Publish a scheduled video when time comes"""
+        if self.is_scheduled and self.scheduled_at and datetime.utcnow() >= self.scheduled_at:
+            self.status = VideoStatus.PUBLISHED
+            self.is_draft = False
+            self.is_scheduled = False
+            self.scheduled_at = None
+            return True
+        return False
+    
     def to_dict(self, user_id=None):
         """Convert video to dictionary"""
         video_id = self.video.strip().split("/")[-2] if self.video else None
@@ -237,6 +251,8 @@ class Video(db.Model):
             'is_liked': self.is_liked_by(user_id) if user_id else False,
             'is_viewed': self.is_viewed_by(user_id) if user_id else False,
             'is_following': self.is_following_creator(user_id) if user_id else False,
+            'is_scheduled': self.is_scheduled,
+            'scheduled_at': self.scheduled_at.isoformat() if self.scheduled_at else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'created_by': self.created_by,
             'creator': self.creator.to_dict() if self.creator else None,
