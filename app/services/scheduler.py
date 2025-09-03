@@ -13,7 +13,7 @@ def init_scheduler(app):
         id='publish_scheduled_content',
         func=lambda: publish_scheduled_content_with_context(app),
         trigger='interval',
-        minutes=10,
+        minutes=5,
         replace_existing=True
     )
     
@@ -57,8 +57,7 @@ def publish_scheduled_content(app):
         if scheduled_blogs or scheduled_videos:
             db.session.commit()
             print(f"Published {len(scheduled_blogs)} scheduled blogs and {len(scheduled_videos)} scheduled videos")
-    except Exception as e:
-        print(f"Error in publish_scheduled_content: {e}")
+    except Exception:
         try:
             db.session.rollback()
         except:

@@ -55,6 +55,8 @@ class Blog(db.Model):
         """Publish the blog"""
         self.status = BlogStatus.PUBLISHED
         self.is_draft = False
+        self.is_scheduled = False
+        self.scheduled_at = None
         return True
     
     def reject(self, reason):

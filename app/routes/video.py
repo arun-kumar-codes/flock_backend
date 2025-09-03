@@ -45,10 +45,11 @@ def create_video():
         if scheduled_at_str:
             try:
                 scheduled_at = datetime.fromisoformat(scheduled_at_str.replace('Z', '+00:00'))
-                if scheduled_at <= datetime.now(timezone.utc):
+                scheduled_at = scheduled_at.replace(tzinfo=None)
+                if scheduled_at <= datetime.utcnow():
                     return jsonify({'error': 'Scheduled time must be in the future'}), 400
                 is_scheduled = True
-                is_draft = True  # Scheduled videos are always drafts initially
+                is_draft = True
             except ValueError:
                 return jsonify({'error': 'Invalid scheduled_at format. Use ISO format (e.g., 2025-01-15T14:30:00Z)'}), 400
         

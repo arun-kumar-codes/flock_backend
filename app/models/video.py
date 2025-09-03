@@ -65,6 +65,8 @@ class Video(db.Model):
         """Publish the video"""
         self.status = VideoStatus.PUBLISHED
         self.is_draft = False
+        self.is_scheduled = False
+        self.scheduled_at = None
         return True
     
     def reject(self, reason):
