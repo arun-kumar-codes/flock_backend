@@ -13,7 +13,7 @@ def init_scheduler(app):
         id='publish_scheduled_content',
         func=lambda: publish_scheduled_content_with_context(app),
         trigger='interval',
-        minutes=2,
+        minutes=10,
         replace_existing=True
     )
     

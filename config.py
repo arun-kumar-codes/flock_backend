@@ -1,6 +1,8 @@
 import os
 from datetime import timedelta
 
+from dotenv import load_dotenv
+
 class Config:
     """Base configuration class"""
     SECRET_KEY = os.getenv('SECRET_KEY', '')
@@ -21,6 +23,7 @@ class DevelopmentConfig(Config):
     DEBUG = True
     SQLALCHEMY_DATABASE_URI = os.getenv('DEV_DATABASE_URL', 
         'postgresql://postgres:password@localhost/flock_platform_dev')
+    print(SQLALCHEMY_DATABASE_URI,"12345")
 
 class TestingConfig(Config):
     """Testing configuration"""
