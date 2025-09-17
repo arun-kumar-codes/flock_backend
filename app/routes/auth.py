@@ -29,7 +29,7 @@ def signup():
         username = data.get('username')
         email = data.get('email')
         password = data.get('password')
-        captcha_token = data.get('captchaToken')
+        captcha_token = data.get('recaptchaToken')
         
         if not username or not email or not password:
             return jsonify({'error': 'Username, email, and password are required'}), 400
@@ -203,7 +203,7 @@ def login_password():
         
         identifier = data.get('username_or_email')
         password = data.get('password')
-        captcha_token = data.get('captchaToken')
+        captcha_token = data.get('recaptchaToken')
         
         if not identifier or not password:
             return jsonify({'error': 'Username/email and password are required'}), 400

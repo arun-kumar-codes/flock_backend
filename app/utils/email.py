@@ -4,7 +4,7 @@ import resend
 from app import db
 from app.models.auth import Invitation
 
-
+FROM_EMAIL = os.getenv("FROM_EMAIL")
 
 def send_invitation_email(to_email: str) -> bool:
     """
@@ -25,7 +25,7 @@ def send_invitation_email(to_email: str) -> bool:
 
         resend.api_key = os.getenv('RESEND_API_KEY')
         
-        subject = "You're Invited to Join Flock Platform!"
+        subject = "You’re Invited to Join FLOCK as a Creator"
         
         body = f"""
 
@@ -33,50 +33,54 @@ def send_invitation_email(to_email: str) -> bool:
         
         You've been invited to join Flock Platform as a Creator!
         
-        Flock Platform is a collaborative space where creators can:
-        - 
-        - 
-        - 
+        FLOCK is a next-generation space designed exclusively for creators across the Caribbean and diaspora.
+        As a Creator, you’ll be able to:
+        - Upload and share your videos and blogs with a growing community.
+        - Engage your audience through comments, likes, shares, and saves.
+        - Monetize your content with earnings calculated from real watch time and engagement.
+        - Track performance with detailed dashboards showing your views, watch time, and revenue in real-time.
+        - Withdraw your earnings securely through integrated payout systems.
         
-        To accept this invitation, please visit our platform by clicking on the link below.
-        http://116.202.210.102:3003/signup
+        To accept this invitation and set up your Creator account, click below:
+        https://beta.flocktogether.xyz/signup
         
-        We're excited to have you join our community!
+        Welcome to a new era of content creation. We’re excited to have you on board!
         
         Best regards,
-        The Flock Platform Team
+        The Flock Team
         """
         
         html_body = f"""
         <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
             <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-                <h2 style="color: #2c3e50; text-align: center;">You're Invited to Join Flock Platform!</h2>
                 
                 <p>Hi there,</p>
                 
-                <p>You've been invited to join <strong>Flock Platform</strong> as a <strong>Creator</strong>!</p>
+                <p>You've been invited to join <strong>FLOCK Platform</strong> as a <strong>Creator</strong>!</p>
                 
-                <p>Flock Platform is a collaborative space where creators can:</p>
+                <p>FLOCK is a next-generation space designed exclusively for creators across the Caribbean and the diaspora. As a Creator, you’ll be able to:</p>
                 <ul>
-                    <li></li>
-                    <li></li>
-                    <li></li>
+                    <li>Upload and share your videos and blogs with a growing community.</li>
+                    <li>Engage your audience through comments, likes, shares, and saves.</li>
+                    <li>Monetize your content with earnings calculated from real watch time and engagement.</li>
+                    <li>Track performance with detailed dashboards showing your views, watch time, and revenue in real-time.</li>
+                    <li>Withdraw your earnings securely through integrated payout systems.</li>
                 </ul>
                 
-                <p>To accept this invitation, please visit our platform by clicking on the link below.</p>
+                <p>To accept this invitation and set up your Creator account, click below:</p>
                 
                 <div style="text-align: center; margin: 30px 0;">
-                    <a href="http://116.202.210.102:3003/signup" style="background-color: #3498db; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">Join Flock Platform</a>
+                    <a href="https://beta.flocktogether.xyz/signup" style="background-color: #3498db; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">Join FLOCK Now</a>
                 </div>
                 
-                <p>We're excited to have you join our community!</p>
+                <p>Welcome to a new era of content creation. We’re excited to have you on board!</p>
                 
                 <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
                 
                 <p style="text-align: center; color: #7f8c8d; font-size: 14px;">
                     Best regards,<br>
-                    The Flock Platform Team
+                    The Flock Team
                 </p>
             </div>
         </body>
@@ -84,7 +88,7 @@ def send_invitation_email(to_email: str) -> bool:
         """
         
         params: resend.Emails.SendParams = {
-        "from": "onboarding@resend.dev",
+        "from": f"FlockTogether <{FROM_EMAIL}>",
         "to": [to_email],
         "subject": subject,
         "html": html_body,

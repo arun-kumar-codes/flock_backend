@@ -39,7 +39,7 @@ def get_trending_videos():
         trending_videos = Video.query.filter(
             Video.archived == False,
             Video.status == VideoStatus.PUBLISHED,
-            Video.created_at > datetime.utcnow() - timedelta(days=7),
+            # Video.created_at > datetime.utcnow() - timedelta(days=7),
             Video.views >= 1,
             Video.likes >= 1
         ).order_by(Video.views.desc()).limit(10).all()

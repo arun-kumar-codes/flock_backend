@@ -87,8 +87,8 @@ def setup_stripe_account():
                 try:
                     account_link = stripe_service.get_account_link(
                         stripe_account_id=existing_account.stripe_account_id,
-                        refresh_url="http://116.202.210.102:3001/dashboard/payout",
-                        return_url="http://116.202.210.102:3001/dashboard/payout"
+                        refresh_url="https://beta.flocktogether.xyz/dashboard/payout",
+                        return_url="https://beta.flocktogether.xyz/dashboard/payout"
                     )
                     
                     return jsonify({
@@ -118,8 +118,8 @@ def setup_stripe_account():
         
         account_link = stripe_service.get_account_link(
             stripe_account_id=account.id,
-            refresh_url="http://116.202.210.102:3001/dashboard/payout",
-            return_url="http://116.202.210.102:3001/dashboard/payout"
+            refresh_url="https://beta.flocktogether.xyz/dashboard/payout",
+            return_url="https://beta.flocktogether.xyz/dashboard/payout"
         )
         
         return jsonify({

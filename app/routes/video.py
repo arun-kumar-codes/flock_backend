@@ -67,14 +67,14 @@ def create_video():
             if os.path.getsize(temp.name) > 250 * 1024 * 1024:
                 return jsonify({'error': 'File too large (max 250 MB)'}), 400
 
-            transcoded_path = temp.name.replace(f".{ext}", "_transcoded.mp4")
-            transcode_video(temp.name, transcoded_path)
+            # transcoded_path = temp.name.replace(f".{ext}", "_transcoded.mp4")
+            # transcode_video(temp.name, transcoded_path)
 
             now_str = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
             clean_username = ''.join(c for c in user.username if c.isalnum() or c in ('-', '_'))
             upload_filename = f"{clean_username}_{now_str}.{ext}"
 
-            with open(transcoded_path, 'rb') as f:
+            with open(temp.name, 'rb') as f:
                 response = requests.post(
                     CLOUDFLARE_STREAM_URL,
                     headers={
