@@ -20,6 +20,7 @@ class Blog(db.Model):
     title = db.Column(db.String(200), nullable=False)
     content = db.Column(db.Text, nullable=False)
     image = db.Column(db.String(500), nullable=True)
+    keywords = db.Column(MutableList.as_mutable(ARRAY(db.String(250))), default=list, nullable=True)
     is_draft = db.Column(db.Boolean, default=False, index=True)
     status = db.Column(db.Enum(BlogStatus), default=BlogStatus.PUBLISHED, index=True)
     reason_for_rejection = db.Column(db.String(1000), nullable=True)
@@ -36,11 +37,12 @@ class Blog(db.Model):
     author = db.relationship('User', backref=db.backref('blogs', lazy=True))
     comments = db.relationship('Comment', backref='blog', lazy=True, cascade='all, delete-orphan')
     
-    def __init__(self, title, content, created_by, image=None, is_draft=False, is_scheduled=False, scheduled_at=None):
+    def __init__(self, title, content, created_by, image=None,keywords=None, is_draft=False, is_scheduled=False, scheduled_at=None):
         self.title = title
         self.content = content
         self.created_by = created_by
         self.image = image
+        self.keywords = keywords or []
         self.is_draft = is_draft
         self.status = BlogStatus.DRAFT if is_draft else BlogStatus.PUBLISHED
         self.archived = False
@@ -50,6 +52,20 @@ class Blog(db.Model):
         self.viewed_by = []
         self.is_scheduled = is_scheduled
         self.scheduled_at = scheduled_at
+        
+    def set_keywords(self, keywords_list):
+        """Replace the entire keywords list"""
+        if keywords_list is None:
+            self.keywords = []
+        else:
+            cleaned_keywords = []
+            for keyword in keywords_list:
+                if keyword and keyword.strip():
+                    clean_keyword = keyword.strip()
+                    if clean_keyword not in cleaned_keywords:
+                        cleaned_keywords.append(clean_keyword)
+            self.keywords = cleaned_keywords
+        return True
     
     def publish(self):
         """Publish the blog"""
@@ -140,6 +156,7 @@ class Blog(db.Model):
             'title': self.title,
             'content': self.content,
             'image': self.image,
+            'keywords': self.keywords,
             'is_draft': self.is_draft,
             'reason_for_rejection': self.reason_for_rejection,
             'status': self.status.value if self.status else None,

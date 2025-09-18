@@ -21,6 +21,7 @@ class Video(db.Model):
     description = db.Column(db.Text, nullable=True)
     video = db.Column(db.String(500), nullable=False)
     thumbnail = db.Column(db.String(500), nullable=True)
+    keywords = db.Column(MutableList.as_mutable(ARRAY(db.String(250))), default=list, nullable=True)
     duration = db.Column(db.Integer, nullable=True)
     format = db.Column(db.String(50), nullable=True)
     is_draft = db.Column(db.Boolean, default=False, index=True)
@@ -42,13 +43,14 @@ class Video(db.Model):
     watch_times = db.relationship('VideoWatchTime', backref='video', lazy=True, cascade='all, delete-orphan')
     
     def __init__(self, title, video, created_by, description=None, thumbnail=None, 
-                 duration=None, format=None, is_draft=False, is_scheduled=False, scheduled_at=None):
+                 keywords=None, duration=None, format=None, is_draft=False, is_scheduled=False, scheduled_at=None):
         self.title = title
         self.video = video
         self.created_by = created_by
         self.description = description
         self.thumbnail = thumbnail
         self.duration = duration
+        self.keywords = keywords or []
         self.format = format
         self.is_draft = is_draft
         self.status = VideoStatus.DRAFT if is_draft else VideoStatus.PUBLISHED
@@ -60,6 +62,21 @@ class Video(db.Model):
         self.viewed_by = []
         self.is_scheduled = is_scheduled
         self.scheduled_at = scheduled_at
+    
+    
+    def set_keywords(self, keywords_list):
+        """Replace the entire keywords list"""
+        if keywords_list is None:
+            self.keywords = []
+        else:
+            cleaned_keywords = []
+            for keyword in keywords_list:
+                if keyword and keyword.strip():
+                    clean_keyword = keyword.strip()
+                    if clean_keyword not in cleaned_keywords:
+                        cleaned_keywords.append(clean_keyword)
+            self.keywords = cleaned_keywords
+        return True
     
     def publish(self):
         """Publish the video"""
@@ -235,6 +252,7 @@ class Video(db.Model):
             'description': self.description,
             'video': self.video,
             'thumbnail': self.thumbnail,
+            'keywords': self.keywords,
             'duration': self.duration,
             'duration_formatted': self.format_duration(),
             'format': self.format,

@@ -1,4 +1,5 @@
 import os
+import json
 import requests
 from datetime import datetime, timezone
 
@@ -28,6 +29,8 @@ def create_blog():
         image_file = request.files.get('image')
         is_draft = request.form.get('is_draft')
         scheduled_at_str = request.form.get('scheduled_at')
+        keywords = request.form.get('keywords')
+        keywords = json.loads(keywords) if keywords else []
         
         if not title or not content:
             return jsonify({'error': 'Title and content are required'}), 400
@@ -73,6 +76,7 @@ def create_blog():
             content=content,
             created_by=user.id,
             image=image_path,
+            keywords=keywords,
             is_draft=is_draft == 'true' or is_scheduled,
             scheduled_at=scheduled_at,
             is_scheduled=is_scheduled
@@ -91,6 +95,7 @@ def create_blog():
         }), 201
         
     except Exception as e:
+        print(e)
         db.session.rollback()
         return jsonify({'error': 'Internal server error'}), 500
 
@@ -120,6 +125,8 @@ def update_blog(blog_id):
         title = request.form.get('title')
         content = request.form.get('content')
         image_file = request.files.get('image')
+        keywords = request.form.get('keywords')
+        keywords = json.loads(keywords) if keywords else []
         
         if title is not None:
             if len(title) > 200:
@@ -128,6 +135,9 @@ def update_blog(blog_id):
         
         if content is not None:
             blog.content = content
+            
+        if keywords is not None:
+            blog.set_keywords(keywords)
         
         if image_file and image_file.filename != '':
             if not allowed_file(image_file.filename):

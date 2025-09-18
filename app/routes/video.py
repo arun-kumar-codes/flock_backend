@@ -1,4 +1,5 @@
 import os
+import json
 import requests
 import tempfile
 from datetime import datetime, timezone
@@ -28,6 +29,8 @@ def create_video():
         title = request.form.get('title')
         is_draft = request.form.get('is_draft')
         scheduled_at_str = request.form.get('scheduled_at')
+        keywords = request.form.get('keywords')
+        keywords = json.loads(keywords) if keywords else []
 
         if not video_file or not title:
             return jsonify({'error': 'Missing title or video'}), 400
@@ -53,19 +56,19 @@ def create_video():
             except ValueError:
                 return jsonify({'error': 'Invalid scheduled_at format. Use ISO format (e.g., 2025-01-15T14:30:00Z)'}), 400
         
-        allowed_video_types = {'mp4', 'mov'}
+        # allowed_video_types = {'mp4', 'mov'}
         ext = video_file.filename.lower().split('.')[-1]
-        if ext not in allowed_video_types:
-            return jsonify({'error': 'Invalid video file type, allowed types: mp4, mov'}), 400
+        # if ext not in allowed_video_types:
+        #     return jsonify({'error': 'Invalid video file type, allowed types: mp4, mov'}), 400
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as temp:
             video_file.save(temp.name)
 
             duration = get_video_duration(temp.name)
-            if duration > 600:
-                return jsonify({'error': 'Video too long (max 10 mins)'}), 400
-            if os.path.getsize(temp.name) > 250 * 1024 * 1024:
-                return jsonify({'error': 'File too large (max 250 MB)'}), 400
+            # if duration > 600:
+            #     return jsonify({'error': 'Video too long (max 10 mins)'}), 400
+            # if os.path.getsize(temp.name) > 250 * 1024 * 1024:
+            #     return jsonify({'error': 'File too large (max 250 MB)'}), 400
 
             # transcoded_path = temp.name.replace(f".{ext}", "_transcoded.mp4")
             # transcode_video(temp.name, transcoded_path)
@@ -95,6 +98,7 @@ def create_video():
                 duration=duration,
                 video=playback_url,
                 thumbnail=cloudflare_data['result']['thumbnail'],
+                keywords=keywords,
                 created_by=user.id,
                 is_draft=is_draft == 'true' or is_scheduled,
                 is_scheduled=is_scheduled,
@@ -111,6 +115,7 @@ def create_video():
         return jsonify({'message': message, 'video': video.to_dict(user.id)}), 201
 
     except Exception as e:
+        print(e)
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
@@ -138,6 +143,8 @@ def update_video(video_id):
         
         title = request.json.get('title')
         description = request.json.get('description')
+        keywords = request.json.get('keywords')
+        keywords = json.loads(keywords) if keywords else []
         
         if title:
             if len(title) > 200:
@@ -146,6 +153,9 @@ def update_video(video_id):
         
         if description is not None:
             video.description = description
+            
+        if keywords is not None:
+            video.set_keywords(keywords)
 
         db.session.commit()
         delete_video_cache()
