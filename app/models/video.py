@@ -35,6 +35,7 @@ class Video(db.Model):
     viewed_by = db.Column(MutableList.as_mutable(ARRAY(db.Integer)), default=list)
     scheduled_at = db.Column(db.DateTime, nullable=True, index=True)
     is_scheduled = db.Column(db.Boolean, default=False, index=True)
+    show_comments = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     
@@ -273,6 +274,7 @@ class Video(db.Model):
             'is_following': self.is_following_creator(user_id) if user_id else False,
             'is_scheduled': self.is_scheduled,
             'scheduled_at': self.scheduled_at.isoformat() if self.scheduled_at else None,
+            'show_comments': self.show_comments,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'created_by': self.created_by,
             'creator': self.creator.to_dict() if self.creator else None,

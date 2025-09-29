@@ -104,7 +104,7 @@ def create_blog():
 @jwt_required()
 @creator_required
 def update_blog(blog_id):
-    """Update a blog (title, content, image) - only draft or rejected blogs"""
+    """Update a blog (title, content, image) - only draft, published or rejected blogs"""
     try:
         email = get_jwt_identity()
         user = User.query.filter_by(email=email).first()
@@ -119,8 +119,8 @@ def update_blog(blog_id):
         if blog.created_by != user.id:
             return jsonify({'error': 'You can only update your own blogs'}), 403
         
-        if blog.status not in [BlogStatus.DRAFT]:
-            return jsonify({'error': 'Only draft blogs can be updated'}), 400
+        if blog.status not in [BlogStatus.DRAFT, BlogStatus.PUBLISHED, BlogStatus.REJECTED]:
+            return jsonify({'error': 'Check blog status'}), 400
         
         title = request.form.get('title')
         content = request.form.get('content')
@@ -444,7 +444,7 @@ def get_my_blogs():
         if not user:
             return jsonify({'error': 'User not found'}), 404
         
-        blogs = Blog.query.filter_by(created_by=user.id).all()
+        blogs = Blog.query.filter_by(created_by=user.id).order_by(Blog.created_at.desc()).all()
         
         return jsonify({
             'blogs': [blog.to_dict(user.id) for blog in blogs]
@@ -633,4 +633,35 @@ def blog_image_embedding():
         return jsonify({'message': 'Images embedded successfully', 'images': images}), 200
     
     except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@blog_bp.route('/<int:blog_id>/toggle-comments', methods=['POST'])
+@jwt_required()
+@creator_required
+def toggle_blog_comments(blog_id):
+    """Toggle show_comments for a blog (creator only)"""
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+        
+        blog = Blog.query.get(blog_id)
+        if not blog:
+            return jsonify({'error': 'Blog not found'}), 404
+        
+        # Check if the user is the author of the blog
+        if blog.created_by != user.id:
+            return jsonify({'error': 'You can only modify your own blogs'}), 403
+        
+        # Toggle the show_comments field
+        blog.show_comments = not blog.show_comments
+        db.session.commit()
+        delete_blog_cache()
+        
+        return jsonify({
+            'message': f'Comments {"enabled" if blog.show_comments else "disabled"} successfully',
+            'show_comments': blog.show_comments
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
         return jsonify({'error': 'Internal server error'}), 500

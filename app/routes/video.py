@@ -123,7 +123,7 @@ def create_video():
 @jwt_required()
 @creator_required
 def update_video(video_id):
-    """Update a video (title, description) - only draft or rejected videos"""
+    """Update a video (title, description) - only draft, published or rejected videos"""
     try:
         email = get_jwt_identity()
         user = User.query.filter_by(email=email).first()
@@ -138,8 +138,8 @@ def update_video(video_id):
         if video.created_by != user.id:
             return jsonify({'error': 'You can only update your own videos'}), 403
         
-        if video.status not in [VideoStatus.DRAFT]:
-            return jsonify({'error': 'Only draft videos can be updated'}), 400
+        if video.status not in [VideoStatus.DRAFT, VideoStatus.PUBLISHED, VideoStatus.REJECTED]:
+            return jsonify({'error': 'Check video status'}), 400
         
         title = request.json.get('title')
         description = request.json.get('description')
@@ -631,6 +631,38 @@ def delete_video_comment(comment_id):
         delete_video_cache()
         return jsonify({
             'message': 'Comment deleted successfully'
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Internal server error'}), 500 
+
+
+@video_bp.route('/<int:video_id>/toggle-comments', methods=['POST'])
+@jwt_required()
+@creator_required
+def toggle_video_comments(video_id):
+    """Toggle show_comments for a video (creator only)"""
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+        
+        video = Video.query.get(video_id)
+        if not video:
+            return jsonify({'error': 'Video not found'}), 404
+        
+        # Check if the user is the creator of the video
+        if video.created_by != user.id:
+            return jsonify({'error': 'You can only modify your own videos'}), 403
+        
+        # Toggle the show_comments field
+        video.show_comments = not video.show_comments
+        db.session.commit()
+        delete_video_cache()
+        
+        return jsonify({
+            'message': f'Comments {"enabled" if video.show_comments else "disabled"} successfully',
+            'show_comments': video.show_comments
         }), 200
         
     except Exception as e:
