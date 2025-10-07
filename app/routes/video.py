@@ -15,6 +15,7 @@ video_bp = Blueprint('video', __name__)
 
 CLOUDFLARE_API_TOKEN = os.getenv('CLOUDFLARE_API_TOKEN')
 CLOUDFLARE_STREAM_URL = os.getenv('CLOUDFLARE_STREAM_URL')
+CLOUDFLARE_IMAGE_URL = os.getenv('CLOUDFLARE_IMAGE_URL')
 
 
 @video_bp.route('/create', methods=['POST'])
@@ -26,11 +27,18 @@ def create_video():
         email = get_jwt_identity()
         user = User.query.filter_by(email=email).first()
         video_file = request.files.get('video')
+        thumbnail_file = request.files.get('thumbnail')
         title = request.form.get('title')
         is_draft = request.form.get('is_draft')
         scheduled_at_str = request.form.get('scheduled_at')
         keywords = request.form.get('keywords')
         keywords = json.loads(keywords) if keywords else []
+        age_restricted = request.form.get('age_restricted', 'false').lower() == 'true'
+        locations = request.form.get("locations")
+        locations = json.loads(locations) if locations else []
+        brand_tags = request.form.get('brand_tags')
+        brand_tags = json.loads(brand_tags) if brand_tags else []
+        paid_promotion = request.form.get('paid_promotion', 'false').lower() == 'true'
 
         if not video_file or not title:
             return jsonify({'error': 'Missing title or video'}), 400
@@ -91,18 +99,44 @@ def create_video():
 
             cloudflare_data = response.json()
             playback_url = f"https://videodelivery.net/{cloudflare_data['result']['uid']}/watch"
+            
+            
+            if thumbnail_file:
+                thumb_ext = thumbnail_file.filename.lower().split('.')[-1]
+                with tempfile.NamedTemporaryFile(delete=False, suffix=f".{thumb_ext}") as temp_thumb:
+                    thumbnail_file.save(temp_thumb.name)
+
+                    with open(temp_thumb.name, 'rb') as f_thumb:
+                        thumb_response = requests.post(
+                            CLOUDFLARE_IMAGE_URL,  
+                            headers={"Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}"},
+                            files={"file": (f"thumb_{now_str}.{thumb_ext}", f_thumb)}
+                        )
+
+                if thumb_response.status_code == 200:
+                    thumb_data = thumb_response.json()
+                    thumbnail_url = thumb_data["result"]["variants"][0]  # Cloudflare Images gives multiple sizes
+                else:
+                    return jsonify({'error': 'Thumbnail upload failed'}), 400
+            else:
+                # fallback to Cloudflare auto-generated
+                thumbnail_url = cloudflare_data['result']['thumbnail']            
 
             video = Video(
                 title=title,
                 description=request.form.get('description'),
                 duration=duration,
                 video=playback_url,
-                thumbnail=cloudflare_data['result']['thumbnail'],
+                thumbnail=thumbnail_url,
                 keywords=keywords,
+                locations=locations,
                 created_by=user.id,
                 is_draft=is_draft == 'true' or is_scheduled,
                 is_scheduled=is_scheduled,
-                scheduled_at=scheduled_at
+                scheduled_at=scheduled_at,
+                age_restricted=age_restricted,
+                brand_tags=brand_tags,           
+                paid_promotion=paid_promotion,
             )
             db.session.add(video)
             db.session.commit()
@@ -123,50 +157,122 @@ def create_video():
 @jwt_required()
 @creator_required
 def update_video(video_id):
-    """Update a video (title, description) - only draft, published or rejected videos"""
+    """Update a video (title, description, keywords, thumbnail, age restriction)"""
     try:
         email = get_jwt_identity()
         user = User.query.filter_by(email=email).first()
-        
         if not user:
             return jsonify({'error': 'User not found'}), 404
-        
+
         video = Video.query.get(video_id)
         if not video:
             return jsonify({'error': 'Video not found'}), 404
-        
+
         if video.created_by != user.id:
             return jsonify({'error': 'You can only update your own videos'}), 403
-        
+
         if video.status not in [VideoStatus.DRAFT, VideoStatus.PUBLISHED, VideoStatus.REJECTED]:
             return jsonify({'error': 'Check video status'}), 400
-        
-        title = request.json.get('title')
-        description = request.json.get('description')
-        keywords = request.json.get('keywords')
-        keywords = json.loads(keywords) if keywords else []
-        
+
+        # Handle form data (frontend must send FormData, not JSON)
+        title = request.form.get('title')
+        description = request.form.get('description')
+        keywords = request.form.get('keywords')  # JSON string or comma separated
+        locations = request.form.get('locations')
+        age_restricted = request.form.get('age_restricted')  # "true"/"false"
+        thumbnail_file = request.files.get('thumbnail')
+        paid_promotion = request.form.get("paid_promotion")
+        brand_tags = request.form.get("brand_tags")
+
         if title:
             if len(title) > 200:
                 return jsonify({'error': 'Title must be less than 200 characters'}), 400
             video.title = title
-        
+
         if description is not None:
             video.description = description
-            
-        if keywords is not None:
-            video.set_keywords(keywords)
 
+        if keywords is not None:
+            try:
+                # If frontend sends JSON.stringify([...])
+                keywords_list = json.loads(keywords) if isinstance(keywords, str) else keywords
+                if not isinstance(keywords_list, list):
+                    keywords_list = []
+            except Exception:
+                # If comma separated
+                keywords_list = [kw.strip() for kw in keywords.split(",") if kw.strip()]
+            video.set_keywords(keywords_list)
+        
+        if locations is not None:
+            try:
+                # If frontend sends JSON.stringify([...])
+                locations_list = json.loads(locations) if isinstance(locations, str) else locations
+                if not isinstance(locations_list, list):
+                    locations_list = []
+            except Exception:
+                # If comma separated string
+                locations_list = [loc.strip() for loc in locations.split(",") if loc.strip()]
+            video.locations = locations_list
+
+        if age_restricted is not None:
+            video.age_restricted = str(age_restricted).lower() in ["true", "1", "yes"]
+            
+        if brand_tags is not None:
+            try:
+                brand_tags = json.loads(brand_tags)
+                if not isinstance(brand_tags, list):
+                    brand_tags = [brand_tags]
+            except Exception:
+                brand_tags = [b.strip() for b in brand_tags.split(',') if b.strip()]
+            video.brand_tags = brand_tags
+
+        if paid_promotion is not None:
+            video.paid_promotion = str(paid_promotion).lower() in ["true", "1", "yes"]
+
+        if thumbnail_file:
+            thumb_ext = thumbnail_file.filename.lower().split('.')[-1]
+            filename = f"thumb_update_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.{thumb_ext}"
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{thumb_ext}") as temp_thumb:
+                thumbnail_file.save(temp_thumb.name)
+
+                # Upload to Cloudflare
+                with open(temp_thumb.name, "rb") as f_thumb:
+                    thumb_response = requests.post(
+                        CLOUDFLARE_IMAGE_URL,
+                        headers={"Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}"},
+                        files={"file": (filename, f_thumb)},
+                        timeout=30
+                    )
+
+            os.remove(temp_thumb.name)  # leanup temp file safely
+
+            if thumb_response.status_code == 200:
+                thumb_data = thumb_response.json()
+                variants = thumb_data.get("result", {}).get("variants", [])
+                if variants:
+                    video.thumbnail = variants[0]
+                    video.updated_at = datetime.utcnow()  # refresh timestamp
+                else:
+                    return jsonify({"error": "Invalid Cloudflare response format"}), 400
+            else:
+                print("Thumbnail upload failed:", thumb_response.text)
+                return jsonify({"error": "Thumbnail upload failed"}), 400
+
+
+        # Commit updates
         db.session.commit()
         delete_video_cache()
+
         return jsonify({
-            'message': 'Video updated successfully',
-            'video': video.to_dict(user.id)
+            "message": "Video updated successfully",
+            "video": video.to_dict(user.id)
         }), 200
-        
+
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': 'Internal server error'}), 500
+        print("Error in update_video:", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @video_bp.route('/<int:video_id>/publish', methods=['PATCH'])

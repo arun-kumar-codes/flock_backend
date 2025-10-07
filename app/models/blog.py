@@ -21,6 +21,10 @@ class Blog(db.Model):
     content = db.Column(db.Text, nullable=False)
     image = db.Column(db.String(500), nullable=True)
     keywords = db.Column(MutableList.as_mutable(ARRAY(db.String(250))), default=list, nullable=True)
+    age_restricted = db.Column(db.Boolean, default=False)
+    locations = db.Column(db.JSON, default=[])
+    brand_tags = db.Column(MutableList.as_mutable(ARRAY(db.String(250))), default=list, nullable=True)
+    paid_promotion = db.Column(db.Boolean, default=False)
     is_draft = db.Column(db.Boolean, default=False, index=True)
     status = db.Column(db.Enum(BlogStatus), default=BlogStatus.PUBLISHED, index=True)
     reason_for_rejection = db.Column(db.String(1000), nullable=True)
@@ -38,7 +42,7 @@ class Blog(db.Model):
     author = db.relationship('User', backref=db.backref('blogs', lazy=True))
     comments = db.relationship('Comment', backref='blog', lazy=True, cascade='all, delete-orphan')
     
-    def __init__(self, title, content, created_by, image=None,keywords=None, is_draft=False, is_scheduled=False, scheduled_at=None):
+    def __init__(self, title, content, created_by, image=None, keywords=None, is_draft=False, is_scheduled=False, scheduled_at=None, age_restricted=False, locations=None, brand_tags=None, paid_promotion=False):
         self.title = title
         self.content = content
         self.created_by = created_by
@@ -53,6 +57,10 @@ class Blog(db.Model):
         self.viewed_by = []
         self.is_scheduled = is_scheduled
         self.scheduled_at = scheduled_at
+        self.age_restricted = age_restricted
+        self.locations = locations or []
+        self.brand_tags = brand_tags or []
+        self.paid_promotion = paid_promotion
         
     def set_keywords(self, keywords_list):
         """Replace the entire keywords list"""
@@ -104,21 +112,30 @@ class Blog(db.Model):
         self.archived = False
         return True
     
-    def add_like(self, user_id):
-        """Add a like from a user"""
-        if user_id not in self.liked_by:
-            self.liked_by.append(user_id)
-            self.likes += 1
-    
-    def remove_like(self, user_id):
-        """Remove a like from a user"""
-        if user_id in self.liked_by:
-            self.liked_by.remove(user_id)
-            self.likes -= 1
-    
     def is_liked_by(self, user_id):
         """Check if blog is liked by a specific user"""
-        return user_id in self.liked_by
+        if not self.liked_by:
+            return False
+        return str(user_id) in [str(u) for u in self.liked_by]
+
+
+    def add_like(self, user_id):
+        """Add a like from a user (idempotent and safe)"""
+        if self.liked_by is None:
+            self.liked_by = []
+        if not self.is_liked_by(user_id):
+            self.liked_by.append(user_id)
+            if self.likes is None:
+                self.likes = 0
+            self.likes += 1
+
+    def remove_like(self, user_id):
+        """Remove a like from a user (idempotent and safe)"""
+        if not self.liked_by:
+            self.liked_by = []
+        if self.is_liked_by(user_id):
+            self.liked_by = [u for u in self.liked_by if str(u) != str(user_id)]
+            self.likes = max((self.likes or 0) - 1, 0)
     
     def add_view(self, user_id):
         """Add a view from a user"""
@@ -158,6 +175,10 @@ class Blog(db.Model):
             'content': self.content,
             'image': self.image,
             'keywords': self.keywords,
+            'age_restricted': self.age_restricted,
+            'locations': self.locations or [],
+            'brand_tags': self.brand_tags or [],
+            'paid_promotion': self.paid_promotion,
             'is_draft': self.is_draft,
             'reason_for_rejection': self.reason_for_rejection,
             'status': self.status.value if self.status else None,

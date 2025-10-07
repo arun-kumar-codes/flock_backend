@@ -38,13 +38,17 @@ class Video(db.Model):
     show_comments = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    
+    age_restricted = db.Column(db.Boolean, default=False)   # True = Not for kids 
+    locations = db.Column(db.JSON, default=[])
+    brand_tags = db.Column(MutableList.as_mutable(ARRAY(db.String(250))), default=list, nullable=True)
+    paid_promotion = db.Column(db.Boolean, default=False)
+
     creator = db.relationship('User', backref=db.backref('videos', lazy=True)) 
     comments = db.relationship('VideoComment', backref='video', lazy=True, cascade='all, delete-orphan')
     watch_times = db.relationship('VideoWatchTime', backref='video', lazy=True, cascade='all, delete-orphan')
     
     def __init__(self, title, video, created_by, description=None, thumbnail=None, 
-                 keywords=None, duration=None, format=None, is_draft=False, is_scheduled=False, scheduled_at=None):
+                 keywords=None, locations=None, duration=None, format=None, is_draft=False, is_scheduled=False, scheduled_at=None, age_restricted=False, brand_tags=None, paid_promotion=False):
         self.title = title
         self.video = video
         self.created_by = created_by
@@ -52,6 +56,7 @@ class Video(db.Model):
         self.thumbnail = thumbnail
         self.duration = duration
         self.keywords = keywords or []
+        self.locations = locations or []
         self.format = format
         self.is_draft = is_draft
         self.status = VideoStatus.DRAFT if is_draft else VideoStatus.PUBLISHED
@@ -63,7 +68,9 @@ class Video(db.Model):
         self.viewed_by = []
         self.is_scheduled = is_scheduled
         self.scheduled_at = scheduled_at
-    
+        self.age_restricted = age_restricted
+        self.brand_tags = brand_tags or []
+        self.paid_promotion = paid_promotion
     
     def set_keywords(self, keywords_list):
         """Replace the entire keywords list"""
@@ -116,16 +123,23 @@ class Video(db.Model):
         return True
     
     def add_like(self, user_id):
-        """Add a like from a user"""
-        if user_id not in self.liked_by:
+        """Add a like from a user (idempotent)"""
+        if self.liked_by is None:
+            self.liked_by = []
+        if not self.is_liked_by(user_id):
             self.liked_by.append(user_id)
+            if self.likes is None:
+                self.likes = 0
             self.likes += 1
     
     def remove_like(self, user_id):
-        """Remove a like from a user"""
-        if user_id in self.liked_by:
-            self.liked_by.remove(user_id)
-            self.likes -= 1
+        """Remove a like from a user (idempotent and safe)"""
+        if not self.liked_by:
+            self.liked_by = []
+        if self.is_liked_by(user_id):
+            # Convert to str for safe comparison
+            self.liked_by = [u for u in self.liked_by if str(u) != str(user_id)]
+            self.likes = max((self.likes or 0) - 1, 0)
     
     def add_view(self, user_id):
         """Add a view from a user"""
@@ -161,7 +175,7 @@ class Video(db.Model):
     def add_watch_time(self, user_id, watch_time_seconds):
         """Add watch time from a user"""
         watch_time_entry = VideoWatchTime.query.filter_by(
-            video_id=self.id, 
+            video_id=self.id,
             user_id=user_id
         ).first()
         
@@ -193,7 +207,10 @@ class Video(db.Model):
     
     def is_liked_by(self, user_id):
         """Check if video is liked by a specific user"""
-        return user_id in self.liked_by
+        if not self.liked_by:
+            return False
+        # Normalize types (JSON columns may store as str)
+        return str(user_id) in [str(u) for u in self.liked_by]
     
     def is_viewed_by(self, user_id):
         """Check if video is viewed by a specific user"""
@@ -279,7 +296,11 @@ class Video(db.Model):
             'created_by': self.created_by,
             'creator': self.creator.to_dict() if self.creator else None,
             'comments_count': len(self.comments),
-            'comments': [comment.to_dict() for comment in self.comments]
+            'comments': [comment.to_dict() for comment in self.comments],
+            'age_restricted': self.age_restricted,
+            'locations': self.locations or [],
+            'brand_tags': self.brand_tags or [],
+            'paid_promotion': self.paid_promotion,
         }
     
     def __repr__(self):

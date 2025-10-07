@@ -31,6 +31,13 @@ def create_blog():
         scheduled_at_str = request.form.get('scheduled_at')
         keywords = request.form.get('keywords')
         keywords = json.loads(keywords) if keywords else []
+        age_restricted = request.form.get('age_restricted', 'false').lower() == 'true'
+        locations = request.form.get("locations")
+        locations = json.loads(locations) if locations else []
+        brand_tags = request.form.get('brand_tags')
+        brand_tags = json.loads(brand_tags) if brand_tags else []
+        paid_promotion = request.form.get('paid_promotion', 'false').lower() == 'true'
+
         
         if not title or not content:
             return jsonify({'error': 'Title and content are required'}), 400
@@ -79,7 +86,12 @@ def create_blog():
             keywords=keywords,
             is_draft=is_draft == 'true' or is_scheduled,
             scheduled_at=scheduled_at,
-            is_scheduled=is_scheduled
+            is_scheduled=is_scheduled,
+            age_restricted=age_restricted,
+            locations=locations,
+            brand_tags=brand_tags,
+            paid_promotion=paid_promotion,
+
         )
         db.session.add(blog)
         db.session.commit()
@@ -127,6 +139,32 @@ def update_blog(blog_id):
         image_file = request.files.get('image')
         keywords = request.form.get('keywords')
         keywords = json.loads(keywords) if keywords else []
+        locations = request.form.get('locations')
+        age_restricted = request.form.get('age_restricted')
+        paid_promotion = request.form.get("paid_promotion")
+        brand_tags = request.form.get("brand_tags")
+        
+        if locations is not None:
+            try:
+                # If frontend sends JSON string
+                if isinstance(locations, str):
+                    locations_list = json.loads(locations) if locations else []
+                else:
+                    locations_list = locations
+                
+                # Ensure it's a list
+                if not isinstance(locations_list, list):
+                    locations_list = []
+                
+                # Store as list (JSON column)
+                blog.locations = locations_list
+            except Exception as e:
+                print(f"Location parsing error: {e}")
+                blog.locations = []
+         
+            
+        if age_restricted is not None:
+            blog.age_restricted = str(age_restricted).lower() in ["true", "1", "yes"]
         
         if title is not None:
             if len(title) > 200:
@@ -138,6 +176,18 @@ def update_blog(blog_id):
             
         if keywords is not None:
             blog.set_keywords(keywords)
+            
+        if brand_tags is not None:
+            try:
+                brand_tags = json.loads(brand_tags)
+                if not isinstance(brand_tags, list):
+                    brand_tags = [brand_tags]
+            except Exception:
+                brand_tags = [b.strip() for b in brand_tags.split(',') if b.strip()]
+            blog.brand_tags = brand_tags
+
+        if paid_promotion is not None:
+            blog.paid_promotion = str(paid_promotion).lower() in ["true", "1", "yes"]
         
         if image_file and image_file.filename != '':
             if not allowed_file(image_file.filename):
@@ -165,8 +215,9 @@ def update_blog(blog_id):
         }), 200
         
     except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': 'Internal server error'}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 @blog_bp.route('/<int:blog_id>/publish', methods=['PATCH'])
@@ -430,7 +481,9 @@ def get_all_blogs():
         }), 200
         
     except Exception as e:
-        return jsonify({'error': 'Internal server error'}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 @blog_bp.route('/my-blogs', methods=['GET'])
@@ -451,7 +504,9 @@ def get_my_blogs():
         }), 200
         
     except Exception as e:
-        return jsonify({'error': 'Internal server error'}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 @blog_bp.route('/<int:blog_id>/toggle-like', methods=['POST'])

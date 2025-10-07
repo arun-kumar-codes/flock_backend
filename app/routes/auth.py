@@ -525,3 +525,34 @@ def cache_clear():
     return jsonify({
         'success': 'Cache cleared'
     }), 200
+    
+    
+@auth_bp.route("/toggle-role", methods=["PATCH"])
+@jwt_required()
+def toggle_role():
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        # Creator -> Viewer is always allowed
+        if user.role == UserRole.CREATOR:
+            user.role = UserRole.VIEWER
+
+        elif user.role == UserRole.VIEWER:
+            user.role = UserRole.CREATOR
+
+        else:
+            return jsonify({"error": "Role cannot be toggled"}), 400
+
+        db.session.commit()
+
+        return jsonify({
+            "message": f"Switched to {user.role.value}",
+            "user": user.to_dict()
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Internal server error", "details": str(e)}), 500
