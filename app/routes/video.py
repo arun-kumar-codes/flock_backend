@@ -664,8 +664,8 @@ def add_video_watch_time(video_id):
         if not watch_time_seconds or not isinstance(watch_time_seconds, (int, float)) or watch_time_seconds <= 0:
             return jsonify({'error': 'Valid watch_time (positive number) is required in payload'}), 400
         
-        if watch_time_seconds <= 0.9 * video.duration:
-            return jsonify({'error': 'Watch time must be greater than 90% of video duration'}), 400
+        if watch_time_seconds <= 0.1 * video.duration:
+            return jsonify({'error': 'Watch time must be greater than 10% of video duration'}), 400
         if watch_time_seconds > video.duration:
             # return jsonify({'error': 'Watch time cannot be greater than video duration'}), 400
             watch_time_seconds = video.duration

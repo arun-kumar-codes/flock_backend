@@ -164,7 +164,7 @@ class Video(db.Model):
         earnings_entry = CreatorEarnings(
             creator_id=self.created_by,
             video_id=self.id,
-            watch_time_minutes=int(watch_time_minutes),
+            watch_time_minutes=float(watch_time_minutes),
             earnings=earnings,
             cpm_rate_used=cpm_rate
         )
