@@ -28,8 +28,10 @@ venv.bak/
 
 # OS
 .DS_Store
-Thumbs.db 
+Thumbs.db
 
 nohup.out
 firebase-service-account.json
 static/
+
+uploads_tmp/

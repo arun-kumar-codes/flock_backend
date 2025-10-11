@@ -1,10 +1,14 @@
-import os
+import os, uuid
 import json
 import requests
 import tempfile
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from werkzeug.utils import secure_filename
+from tusclient import client
+import time
+from app.tasks.tasks import upload_video_task
 
 from app import db, cache
 from app.models import Video, User, VideoStatus, VideoComment, VideoWatchTime, UserRole
@@ -16,142 +20,127 @@ video_bp = Blueprint('video', __name__)
 CLOUDFLARE_API_TOKEN = os.getenv('CLOUDFLARE_API_TOKEN')
 CLOUDFLARE_STREAM_URL = os.getenv('CLOUDFLARE_STREAM_URL')
 CLOUDFLARE_IMAGE_URL = os.getenv('CLOUDFLARE_IMAGE_URL')
+CLOUDFLARE_ACCOUNT_ID = 'f8169ac512b63c3871439a3fc8a06726'
 
 
 @video_bp.route('/create', methods=['POST'])
 @jwt_required()
 @creator_required
 def create_video():
-    """Create a new video"""
+    """Create a new video asynchronously using TUS protocol"""
     try:
         email = get_jwt_identity()
         user = User.query.filter_by(email=email).first()
+
         video_file = request.files.get('video')
         thumbnail_file = request.files.get('thumbnail')
         title = request.form.get('title')
-        is_draft = request.form.get('is_draft')
-        scheduled_at_str = request.form.get('scheduled_at')
-        keywords = request.form.get('keywords')
-        keywords = json.loads(keywords) if keywords else []
-        age_restricted = request.form.get('age_restricted', 'false').lower() == 'true'
-        locations = request.form.get("locations")
-        locations = json.loads(locations) if locations else []
-        brand_tags = request.form.get('brand_tags')
-        brand_tags = json.loads(brand_tags) if brand_tags else []
-        paid_promotion = request.form.get('paid_promotion', 'false').lower() == 'true'
 
         if not video_file or not title:
             return jsonify({'error': 'Missing title or video'}), 400
-        if len(title) > 200:
-            return jsonify({'error': 'Title must be less than 200 characters'}), 400 
-       
-        # user_videos_count = Video.query.filter_by(created_by=user.id).count()
-        # if user_videos_count >= 5:
-        #     return jsonify({'error': 'You can only upload a maximum of 5 videos'}), 400
-        
-        # Parse scheduled_at if provided
-        scheduled_at = None
-        is_scheduled = False
-        
-        if scheduled_at_str:
-            try:
-                scheduled_at = datetime.fromisoformat(scheduled_at_str.replace('Z', '+00:00'))
-                scheduled_at = scheduled_at.replace(tzinfo=None)
-                if scheduled_at <= datetime.utcnow():
-                    return jsonify({'error': 'Scheduled time must be in the future'}), 400
-                is_scheduled = True
-                is_draft = True
-            except ValueError:
-                return jsonify({'error': 'Invalid scheduled_at format. Use ISO format (e.g., 2025-01-15T14:30:00Z)'}), 400
-        
-        # allowed_video_types = {'mp4', 'mov'}
-        ext = video_file.filename.lower().split('.')[-1]
-        # if ext not in allowed_video_types:
-        #     return jsonify({'error': 'Invalid video file type, allowed types: mp4, mov'}), 400
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as temp:
-            video_file.save(temp.name)
 
-            duration = get_video_duration(temp.name)
-            # if duration > 600:
-            #     return jsonify({'error': 'Video too long (max 10 mins)'}), 400
-            # if os.path.getsize(temp.name) > 250 * 1024 * 1024:
-            #     return jsonify({'error': 'File too large (max 250 MB)'}), 400
+        # Choose a writable path within your app directory
+        UPLOAD_TMP_DIR = os.path.join(os.getcwd(), "uploads_tmp")
+        os.makedirs(UPLOAD_TMP_DIR, exist_ok=True)
 
-            # transcoded_path = temp.name.replace(f".{ext}", "_transcoded.mp4")
-            # transcode_video(temp.name, transcoded_path)
+        temp_video = os.path.join(UPLOAD_TMP_DIR, f"{uuid.uuid4()}")
+        video_file.save(temp_video)
 
-            now_str = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-            clean_username = ''.join(c for c in user.username if c.isalnum() or c in ('-', '_'))
-            upload_filename = f"{clean_username}_{now_str}.{ext}"
+        temp_thumb = None
+        if thumbnail_file:
+            temp_thumb = os.path.join(UPLOAD_TMP_DIR, f"{uuid.uuid4()}")
+            thumbnail_file.save(temp_thumb)
 
-            with open(temp.name, 'rb') as f:
-                response = requests.post(
-                    CLOUDFLARE_STREAM_URL,
-                    headers={
-                        "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}"
-                    },
-                    files={"file": (upload_filename, f)}
-                )
+        # Extract form data
+        video_data = {
+            "title": title,
+            "description": request.form.get("description"),
+            "keywords": json.loads(request.form.get("keywords", "[]")),
+            "locations": json.loads(request.form.get("locations", "[]")),
+            "is_draft": request.form.get("is_draft", "false").lower() == "true",
+            "is_scheduled": False,
+            "scheduled_at": None,
+            "age_restricted": request.form.get("age_restricted", "false").lower() == "true",
+            "brand_tags": json.loads(request.form.get("brand_tags", "[]")),
+            "paid_promotion": request.form.get("paid_promotion", "false").lower() == "true"
+        }
 
-            if response.status_code != 200:
-                return jsonify({'error': 'Video Upload failed'}), 400
+        # Enqueue background task with TUS upload
+        task = upload_video_task.apply_async(
+            args=[user.id, video_data, temp_video, temp_thumb if temp_thumb else None]
+        )
 
-            cloudflare_data = response.json()
-            playback_url = f"https://videodelivery.net/{cloudflare_data['result']['uid']}/watch"
-            
-            
-            if thumbnail_file:
-                thumb_ext = thumbnail_file.filename.lower().split('.')[-1]
-                with tempfile.NamedTemporaryFile(delete=False, suffix=f".{thumb_ext}") as temp_thumb:
-                    thumbnail_file.save(temp_thumb.name)
-
-                    with open(temp_thumb.name, 'rb') as f_thumb:
-                        thumb_response = requests.post(
-                            CLOUDFLARE_IMAGE_URL,  
-                            headers={"Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}"},
-                            files={"file": (f"thumb_{now_str}.{thumb_ext}", f_thumb)}
-                        )
-
-                if thumb_response.status_code == 200:
-                    thumb_data = thumb_response.json()
-                    thumbnail_url = thumb_data["result"]["variants"][0]  # Cloudflare Images gives multiple sizes
-                else:
-                    return jsonify({'error': 'Thumbnail upload failed'}), 400
-            else:
-                # fallback to Cloudflare auto-generated
-                thumbnail_url = cloudflare_data['result']['thumbnail']            
-
-            video = Video(
-                title=title,
-                description=request.form.get('description'),
-                duration=duration,
-                video=playback_url,
-                thumbnail=thumbnail_url,
-                keywords=keywords,
-                locations=locations,
-                created_by=user.id,
-                is_draft=is_draft == 'true' or is_scheduled,
-                is_scheduled=is_scheduled,
-                scheduled_at=scheduled_at,
-                age_restricted=age_restricted,
-                brand_tags=brand_tags,           
-                paid_promotion=paid_promotion,
-            )
-            db.session.add(video)
-            db.session.commit()
-            delete_video_cache()
-            
-            message = 'Video uploaded successfully'
-            if is_scheduled:
-                message = 'Video scheduled successfully'
-        
-        return jsonify({'message': message, 'video': video.to_dict(user.id)}), 201
+        return jsonify({
+            "message": "Video upload started in background using TUS protocol",
+            "task_id": task.id,
+            "info": "Upload will resume automatically if interrupted"
+        }), 202
 
     except Exception as e:
-        print(e)
-        db.session.rollback()
+        import traceback
+        traceback.print_exc()
+        if 'temp_video' in locals() and os.path.exists(temp_video.name):
+            os.remove(temp_video.name)
+        if 'temp_thumb' in locals() and temp_thumb and os.path.exists(temp_thumb.name):
+            os.remove(temp_thumb.name)
         return jsonify({'error': str(e)}), 500
+
+
+
+@video_bp.route('/task-status/<task_id>', methods=['GET', 'OPTIONS'])  # Add OPTIONS
+@jwt_required()
+def get_task_status(task_id):
+    """Get the status of a background task"""
+    try:
+        from app import celery_app
+
+        print(f"=== CHECKING TASK STATUS ===")
+        print(f"Task ID: {task_id}")
+
+        task = celery_app.AsyncResult(task_id)
+
+        print(f"Task State: {task.state}")
+        print(f"Task Info: {task.info}")
+
+        if task.state == 'PENDING':
+            response = {
+                'state': task.state,
+                'status': 'Task is waiting to start...'
+            }
+        elif task.state == 'STARTED':
+            response = {
+                'state': task.state,
+                'status': 'Video is uploading...'
+            }
+        elif task.state == 'SUCCESS':
+            response = {
+                'state': task.state,
+                'status': 'Upload completed successfully!',
+                'result': task.result
+            }
+        elif task.state == 'FAILURE':
+            response = {
+                'state': task.state,
+                'status': 'Upload failed',
+                'error': str(task.info)
+            }
+        else:
+            response = {
+                'state': task.state,
+                'status': str(task.info)
+            }
+
+        print(f"Response: {response}")
+        print("=" * 30)
+
+        return jsonify(response), 200
+    except Exception as e:
+        print(f"ERROR in get_task_status: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
 
 @video_bp.route('/<int:video_id>', methods=['PATCH'])
 @jwt_required()

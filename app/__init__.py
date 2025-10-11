@@ -7,6 +7,10 @@ from flask_cors import CORS
 from flask_caching import Cache
 from flask_jwt_extended import JWTManager
 from config import config
+from celery import Celery
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Initialize extensions
 db = SQLAlchemy()
@@ -20,26 +24,52 @@ cache_config = {
 }
 cache = Cache(config=cache_config)
 
+# Create celery instance at module level
+celery_app = Celery('flock_platform')
+
+def make_celery(app):
+    celery_app.conf.update(
+        broker_url=app.config['REDIS_URL'],
+        result_backend=app.config['REDIS_URL'],
+        task_serializer='json',
+        accept_content=['json'],
+        result_serializer='json',
+        timezone='UTC',
+        enable_utc=True,
+    )
+
+    class ContextTask(celery_app.Task):
+        def __call__(self, *args, **kwargs):
+            with app.app_context():
+                return self.run(*args, **kwargs)
+
+    celery_app.Task = ContextTask
+    return celery_app
+
 def create_app(config_name='default'):
     """Application factory function"""
     app = Flask(__name__)
     
     # Load configuration
     app.config.from_object(config[config_name])
-    
-    # Add scheduler configuration
+
+    # Add scheduler & Redis config
     app.config.update({
         'SCHEDULER_API_ENABLED': True,
         'SCHEDULER_TIMEZONE': 'UTC',
-        })
-    
+        'REDIS_URL': os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
+    })
+
     # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
     cache.init_app(app)
     CORS(app)
-    
+
+    # Configure celery
+    make_celery(app)
+
     # Register blueprints
     from app.routes.auth import auth_bp
     from app.routes.email import email_bp
