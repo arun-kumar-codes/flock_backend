@@ -45,7 +45,13 @@ def create_video():
         os.makedirs(UPLOAD_TMP_DIR, exist_ok=True)
 
         temp_video = os.path.join(UPLOAD_TMP_DIR, f"{uuid.uuid4()}")
-        video_file.save(temp_video)
+        with open(temp_video, 'wb') as f:
+            chunk_size = 1024 * 1024 * 100  # 100MB
+            while True:
+                chunk = video_file.stream.read(chunk_size)
+                if not chunk:
+                    break
+                f.write(chunk)
 
         temp_thumb = None
         if thumbnail_file:

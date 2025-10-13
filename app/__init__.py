@@ -52,6 +52,7 @@ def create_app(config_name='default'):
     
     # Load configuration
     app.config.from_object(config[config_name])
+    app.config['MAX_CONTENT_LENGTH'] = 4 * 1024 * 1024 * 1024
 
     # Add scheduler & Redis config
     app.config.update({
