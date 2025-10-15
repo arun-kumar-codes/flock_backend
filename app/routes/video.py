@@ -3,6 +3,7 @@ import json
 import requests
 import tempfile
 from datetime import datetime, timezone
+from dateutil.parser import isoparse
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from werkzeug.utils import secure_filename
@@ -35,10 +36,25 @@ def create_video():
         video_file = request.files.get('video')
         thumbnail_file = request.files.get('thumbnail')
         title = request.form.get('title')
+        scheduled_at_str = request.form.get('scheduled_at')
 
         if not video_file or not title:
             return jsonify({'error': 'Missing title or video'}), 400
 
+        # Parse scheduled_at if provided
+        scheduled_at = None
+        is_scheduled = False
+
+        if scheduled_at_str:
+            try:
+                scheduled_at = datetime.fromisoformat(scheduled_at_str.replace('Z', '+00:00'))
+                scheduled_at = scheduled_at.replace(tzinfo=None)
+                if scheduled_at <= datetime.utcnow():
+                    return jsonify({'error': 'Scheduled time must be in the future'}), 400
+                is_scheduled = True
+                is_draft = True
+            except ValueError:
+                return jsonify({'error': 'Invalid scheduled_at format. Use ISO format (e.g., 2025-01-15T14:30:00Z)'}), 400
 
         # Choose a writable path within your app directory
         UPLOAD_TMP_DIR = os.path.join(os.getcwd(), "uploads_tmp")
@@ -65,8 +81,8 @@ def create_video():
             "keywords": json.loads(request.form.get("keywords", "[]")),
             "locations": json.loads(request.form.get("locations", "[]")),
             "is_draft": request.form.get("is_draft", "false").lower() == "true",
-            "is_scheduled": False,
-            "scheduled_at": None,
+            "is_scheduled": is_scheduled,
+            "scheduled_at": scheduled_at,
             "age_restricted": request.form.get("age_restricted", "false").lower() == "true",
             "brand_tags": json.loads(request.form.get("brand_tags", "[]")),
             "paid_promotion": request.form.get("paid_promotion", "false").lower() == "true"
@@ -546,7 +562,11 @@ def create_video_comment(video_id):
         
         if video.status != VideoStatus.PUBLISHED:
             return jsonify({'error': 'Only published videos can be commented on'}), 400
-        
+
+        # prevent commenting when disabled
+        if not video.show_comments:
+            return jsonify({'error': 'Comments are disabled for this video'}), 403
+
         comment_text = request.json.get('comment')
         if not comment_text:
             return jsonify({'error': 'Comment text is required'}), 400

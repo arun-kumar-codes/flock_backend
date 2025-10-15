@@ -3,7 +3,8 @@ import time
 import base64
 import tempfile
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
+from dateutil.parser import isoparse
 from tusclient import client
 from app import db, celery_app
 from app.models import Video, User
@@ -126,6 +127,47 @@ def upload_video_task(self, user_id, video_data, video_path, thumb_path=None):
         if not user:
             raise Exception("User not found")
 
+        is_draft = video_data.get("is_draft", False)
+        scheduled_at_str = video_data.get("scheduled_at")
+        is_scheduled = video_data.get("is_scheduled", False)
+        scheduled_at = None
+
+        if scheduled_at_str:
+            try:
+                if isinstance(scheduled_at_str, str):
+                    scheduled_at = datetime.fromisoformat(scheduled_at_str.replace("Z", "+00:00"))
+                elif isinstance(scheduled_at_str, datetime):
+                    scheduled_at = scheduled_at_str
+
+                scheduled_at = scheduled_at.replace(tzinfo=None)
+                if scheduled_at > datetime.utcnow():
+                    is_scheduled = True
+                else:
+                    is_scheduled = False
+            except Exception as e:
+                print(f"⚠️ Invalid scheduled_at format: {scheduled_at_str} ({e})")
+                scheduled_at = None
+                is_scheduled = False
+
+        if is_draft:
+            final_draft = True
+        elif is_scheduled and scheduled_at and scheduled_at > datetime.utcnow():
+            final_draft = True
+        else:
+            final_draft = False
+
+        print(f"📅 scheduled_at={scheduled_at}, is_scheduled={is_scheduled}, is_draft={is_draft}, final_draft={final_draft}")
+
+        # If scheduled in the future, force draft
+        now_utc = datetime.utcnow()
+        is_future_schedule = bool(scheduled_at and scheduled_at > now_utc)
+        is_draft = True if is_future_schedule else video_data.get("is_draft", False)
+
+        print(f"📅 Parsed scheduled_at (UTC): {scheduled_at}")
+        print(f"🕒 Current UTC: {now_utc}")
+        print(f"🧭 is_future_schedule={is_future_schedule}, is_draft={is_draft}")
+
+
         # Upload video using TUS
         print(f"Starting TUS upload for video: {video_path}")
         video_uid = upload_video_with_tus(video_path)
@@ -183,9 +225,9 @@ def upload_video_task(self, user_id, video_data, video_path, thumb_path=None):
             keywords=video_data.get("keywords", []),
             locations=video_data.get("locations", []),
             created_by=user_id,
-            is_draft=video_data.get("is_draft", False),
-            is_scheduled=video_data.get("is_scheduled", False),
-            scheduled_at=video_data.get("scheduled_at"),
+            is_draft=final_draft,
+            scheduled_at=scheduled_at,
+            is_scheduled=is_scheduled,
             age_restricted=video_data.get("age_restricted", False),
             brand_tags=video_data.get("brand_tags", []),
             paid_promotion=video_data.get("paid_promotion", False),
