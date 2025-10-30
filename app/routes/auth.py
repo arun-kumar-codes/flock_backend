@@ -153,6 +153,7 @@ def update_profile():
             return jsonify({'error': 'User not found'}), 404
         
         username = request.form.get('username')
+        bio = request.form.get('bio')
         profile_picture_file = request.files.get('profile_picture')
         
         if username is None and profile_picture_file is None:
@@ -300,7 +301,81 @@ def get_all_creators():
         return jsonify({'creators': [creator.to_dict() for creator in creators]}), 200
     except Exception as e:
         return jsonify({'error': 'Internal server error'}), 500
-    
+
+@auth_bp.route('/creator/<int:creator_id>', methods=['GET'])
+def get_creator_by_id(creator_id):
+    """Get creator details by ID (public endpoint, no auth required)"""
+    try:
+        creator = User.query.filter_by(id=creator_id, role=UserRole.CREATOR).first()
+        if not creator:
+            return jsonify({'error': 'Creator not found'}), 404
+
+        # Include their videos and blogs if you want
+        videos = Video.query.filter_by(created_by=creator.id).all()
+        blogs = Blog.query.filter_by(created_by=creator.id).all()
+
+        creator_data = {
+            'creator': creator.to_dict(),
+            'videos': [v.to_dict() for v in videos],
+            'blogs': [b.to_dict() for b in blogs]
+        }
+
+        return jsonify(creator_data), 200
+
+    except Exception as e:
+        print(f"Error fetching creator: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@auth_bp.route('/blogs/creator/<int:creator_id>', methods=['GET'])
+@jwt_required(optional=True)
+def get_blogs_by_creator(creator_id):
+    """Public: Get published blogs by creator ID"""
+    try:
+        blogs = Blog.query.filter_by(created_by=creator_id, status=BlogStatus.PUBLISHED).all()
+        blogs_data = [
+            {
+                "id": b.id,
+                "title": b.title,
+                "excerpt": (b.content[:150] + "...") if b.content else "",
+                "views": b.views,
+                "likes": b.likes,
+                "created_at": b.created_at.isoformat() if b.created_at else None,
+            }
+            for b in blogs
+        ]
+
+        return jsonify({"blogs": blogs_data}), 200
+    except Exception as e:
+        print("Error in get_blogs_by_creator:", e)
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@auth_bp.route('/videos/creator/<int:creator_id>', methods=['GET'])
+@jwt_required(optional=True)
+def get_videos_by_creator(creator_id):
+    """Public: Get published videos by creator ID"""
+    try:
+        videos = Video.query.filter_by(created_by=creator_id, status=VideoStatus.PUBLISHED).all()
+
+        videos_data = [
+            {
+                "id": b.id,
+                "title": b.title,
+                "excerpt": (b.content[:150] + "...") if b.content else "",
+                "views": b.views,
+                "likes": b.likes,
+                "created_at": b.created_at.isoformat() if b.created_at else None,
+            }
+            for b in videos
+        ]
+
+        return jsonify({"videos": videos_data}), 200
+
+    except Exception as e:
+        print("Error in get_videos_by_creator:", e)
+        return jsonify({"error": "Internal server error"}), 500
+
 @auth_bp.route('/all-viewers', methods=['GET'])
 @jwt_required()
 @admin_required

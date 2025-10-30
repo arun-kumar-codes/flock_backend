@@ -26,6 +26,7 @@ class User(db.Model):
     password_hash = db.Column(db.String(255), nullable=True)
     profile_picture = db.Column(db.String(500), nullable=True)
     role = db.Column(db.Enum(UserRole), default=UserRole.VIEWER, nullable=False)
+    bio = db.Column(db.Text, nullable=True)
     following = db.relationship(
         'User', 
         secondary=followers,
@@ -62,12 +63,14 @@ class User(db.Model):
         self.username = username
         self.password_hash = self._hash_password(password)
     
-    def update_profile(self, username=None, profile_picture=None):
+    def update_profile(self, username=None, profile_picture=None, bio=None):
         """Update user profile information (username and profile picture)"""
         if username is not None:
             self.username = username
         if profile_picture is not None:
             self.profile_picture = profile_picture
+        if bio is not None:
+            self.bio = bio
             
     def follow(self, user):
         """Follow another user"""
@@ -158,7 +161,8 @@ class User(db.Model):
             'profile_picture': self.profile_picture,
             'role': self.role.value,
             'followers_count': self.get_followers_count(),
-            'following_count': self.get_following_count()
+            'following_count': self.get_following_count(),
+            'bio': self.bio
         }
         
         if self.role == UserRole.CREATOR:
