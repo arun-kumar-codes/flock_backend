@@ -18,6 +18,11 @@ class Config:
     STRIPE_WEBHOOK_ACCOUNT_SECRET = os.getenv('STRIPE_WEBHOOK_ACCOUNT_SECRET', '')
     STRIPE_WEBHOOK_CONNECT_SECRET = os.getenv('STRIPE_WEBHOOK_CONNECT_SECRET', '')
     STRIPE_CONNECT_CLIENT_ID = os.getenv('STRIPE_CONNECT_CLIENT_ID', '')
+    
+    # Paypal Configuration
+    PAYPAL_CLIENT_ID = os.getenv('PAYPAL_CLIENT_ID', '')
+    PAYPAL_CLIENT_SECRET = os.getenv('PAYPAL_CLIENT_SECRET', '')
+    PAYPAL_SANDBOX = os.getenv('PAYPAL_SANDBOX', 'true').lower() == 'true'
 
 class DevelopmentConfig(Config):
     """Development configuration"""
