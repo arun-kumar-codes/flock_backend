@@ -3,9 +3,9 @@ import json
 from base64 import b64encode
 
 # ---------- CONFIG ----------
-CLIENT_ID = "AbVGGWwfWZk8Tc8a3vlercfoytdjXVjhfHRwr95LbmLwAMaKCXTePQ8wH6WA3KAYb0dD_ouo7jZ8n-ZN"
-CLIENT_SECRET = "EFUHmlGSR8-2KoyKWZnE6eFYH_z6QcLmdFKDd3yfRPH2-awGBCCX7n_45Zs_SOPhs9rTKOqjfMBKZjXH"
-RECEIVER_EMAIL = "sb-v9xyr46938773@personal.example.com"  # replace with a PayPal sandbox personal email
+CLIENT_ID = ""
+CLIENT_SECRET = ""
+RECEIVER_EMAIL = ""  # replace with a PayPal sandbox personal email
 SANDBOX = True  # set False for live
 
 BASE_URL = "https://api.sandbox.paypal.com" if SANDBOX else "https://api.paypal.com"
