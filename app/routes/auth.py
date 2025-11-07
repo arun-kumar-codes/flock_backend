@@ -3,7 +3,9 @@ from firebase_admin import auth as firebase_auth
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, create_refresh_token, jwt_required, get_jwt_identity
 import requests
-
+import re
+import tempfile
+import mimetypes
 from app import db
 from app.models import User, UserRole, Invitation, Video, Blog, VideoStatus, BlogStatus
 from app.utils import admin_required, creator_required, delete_video_cache
@@ -33,7 +35,20 @@ def signup():
         
         if not username or not email or not password:
             return jsonify({'error': 'Username, email, and password are required'}), 400
-        
+
+        # Password strength validation
+        password_pattern = re.compile(
+            r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};\'":\\|,.<>\/?])[A-Za-z\d!@#$%^&*()_+\-=\[\]{};\'":\\|,.<>\/?]{8,}$'
+        )
+
+        if not password_pattern.match(password):
+            return jsonify({
+                'error': (
+                    'Password must be at least 8 characters long and include '
+                    'an uppercase letter, lowercase letter, number, and special character.'
+                )
+            }), 400
+
         role = UserRole.VIEWER
         invitation = Invitation.query.filter_by(email=email).first()
         if invitation:
@@ -74,32 +89,88 @@ def signup():
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': 'Internal server error'}), 500
+        return jsonify({'error': 'Internal server error', 'details': str(e)}), 500
 
 @auth_bp.route('/login', methods=['POST'])
 def login():
+    """
+    Handles Firebase social login (Google, etc.)
+    Uses 'picture' from decoded Firebase token, saves to Cloudflare Images,
+    and stores the final URL in user.profile_picture.
+    """
     try:
         id_token = request.json.get('idToken')
+        if not id_token:
+            return jsonify({'error': 'idToken is required'}), 400
+
+        # Verify Firebase token and extract fields
         decoded_token = firebase_auth.verify_id_token(id_token)
         email = decoded_token.get('email')
+        picture_url = decoded_token.get('picture')  # <-- from your token sample
+
+        if not email:
+            return jsonify({'error': 'Email not found in Firebase token'}), 400
 
         is_new_user = False
         user = User.query.filter_by(email=email).first()
         if not user:
+            # Decide role (invited -> CREATOR)
             invitation = Invitation.query.filter_by(email=email).first()
-            if invitation:
-                role = UserRole.CREATOR
-            else:
-                role = UserRole.VIEWER
+            role = UserRole.CREATOR if invitation else UserRole.VIEWER
+
             user = User(email=email, role=role)
             db.session.add(user)
             db.session.commit()
             is_new_user = True
 
-        profile_complete = user.is_profile_complete()
+        # If user has no profile picture yet and we have a token picture, upload it
+        if (not user.profile_picture) and picture_url:
+            try:
+                # Download the Google picture to a temp file
+                resp = requests.get(picture_url, timeout=15)
+                resp.raise_for_status()
+
+                # Try to infer a reasonable filename and content-type
+                content_type = resp.headers.get('Content-Type', 'image/jpeg')
+                ext = mimetypes.guess_extension(content_type.split(';')[0].strip()) or '.jpg'
+                filename = f"profile{ext}"
+
+                # Save to temp file
+                with tempfile.NamedTemporaryFile(delete=True) as tmp:
+                    tmp.write(resp.content)
+                    tmp.flush()
+
+                    # If Cloudflare creds exist, upload; else fallback to Google URL
+                    if CLOUDFLARE_API_TOKEN and CLOUDFLARE_IMAGE_URL:
+                        headers = {"Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}"}
+                        with open(tmp.name, 'rb') as f:
+                            files = {"file": (filename, f, content_type)}
+                            cf_res = requests.post(CLOUDFLARE_IMAGE_URL, headers=headers, files=files, timeout=30)
+
+                        if cf_res.status_code == 200:
+                            user.profile_picture = cf_res.json()['result']['variants'][0]
+                        else:
+                            # Fallback to the Google-hosted picture URL
+                            user.profile_picture = picture_url
+                    else:
+                        # No Cloudflare config—just use Google URL
+                        user.profile_picture = picture_url
+
+                db.session.commit()
+
+            except Exception as e:
+                # If anything goes wrong, do not block login.
+                print(f"[login] Profile image processing failed: {e}")
+                # As a last fallback, at least store the Google URL if available
+                if picture_url and not user.profile_picture:
+                    user.profile_picture = picture_url
+                    db.session.commit()
+
+        # Issue JWTs for your app
         access_token = create_access_token(identity=user.email)
         refresh_token = create_refresh_token(identity=user.email)
-        
+        profile_complete = user.is_profile_complete()
+
         return jsonify({
             'message': 'Login successful',
             'access_token': access_token,
@@ -108,8 +179,12 @@ def login():
             'profile_complete': profile_complete,
             'is_new_user': is_new_user
         }), 200
+
     except Exception as e:
+        db.session.rollback()
+        print(f"[login] Error in social login: {e}")
         return jsonify({'error': str(e)}), 400
+
     
 @auth_bp.route('/complete-profile', methods=['PUT'])
 @jwt_required()
