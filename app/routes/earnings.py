@@ -184,19 +184,33 @@ def get_stripe_account_status():
 @jwt_required()
 @creator_required
 def remove_stripe_account():
-    """ Remove stripe account """
+    """Remove Stripe account"""
     email = get_jwt_identity()
     creator = User.query.filter_by(email=email).first()
-    
+
     stripe_account = StripeAccount.query.filter_by(creator_id=creator.id).first()
     if not stripe_account:
         return jsonify({'error': 'No Stripe account found'}), 400
-    
+
     stripe_service = StripeService()
     try:
-        stripe_service.delete_account(stripe_account.stripe_account_id)
-        return jsonify({'success':True, 'message':'Stripe Account removed successfully.'}), 200
+        # Attempt to delete remotely
+        try:
+            stripe_service.delete_account(stripe_account.stripe_account_id)
+        except Exception as inner_e:
+            print(f"⚠️ Stripe deletion failed (already deleted?): {inner_e}")
+
+        # Always remove from DB
+        db.session.delete(stripe_account)
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'message': 'Stripe account removed successfully'
+        }), 200
     except Exception as e:
+        db.session.rollback()
+        print("Error removing Stripe account:", e)
         return jsonify({'error': str(e)}), 500
     
 

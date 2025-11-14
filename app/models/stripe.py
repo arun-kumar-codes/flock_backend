@@ -30,27 +30,35 @@ class StripeAccount(db.Model):
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
 
+
 class WithdrawalRequest(db.Model):
-    """Withdrawal requests from creators"""
+    """Unified withdrawal requests for all payout methods (Stripe, PayPal, Payoneer, etc.)"""
     __tablename__ = 'withdrawal_requests'
-    
+
     id = db.Column(db.Integer, primary_key=True)
     creator_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     amount = db.Column(Numeric(10, 2), nullable=False)
-    stripe_transfer_id = db.Column(db.String(255), nullable=True)
-    status = db.Column(db.String(50), default='pending')
+    
+    # New fields ↓
+    payout_method = db.Column(db.String(50), default='stripe')  # 'stripe', 'paypal', or 'payoneer'
+    transaction_id = db.Column(db.String(255), nullable=True)   # PayPal batch ID or Stripe transfer ID
+    account_email = db.Column(db.String(255), nullable=True)    # PayPal or Payoneer email used
+    
+    status = db.Column(db.String(50), default='pending')        # pending / processing / completed / failed
     failure_reason = db.Column(Text, nullable=True)
     requested_at = db.Column(db.DateTime, default=datetime.utcnow)
     processed_at = db.Column(db.DateTime, nullable=True)
-    
+
     creator = db.relationship('User', backref=db.backref('withdrawal_requests', lazy=True))
-    
+
     def to_dict(self):
         return {
             'id': self.id,
             'creator_id': self.creator_id,
             'amount': float(self.amount),
-            'stripe_transfer_id': self.stripe_transfer_id,
+            'payout_method': self.payout_method,
+            'transaction_id': self.transaction_id,
+            'account_email': self.account_email,
             'status': self.status,
             'failure_reason': self.failure_reason,
             'requested_at': self.requested_at.isoformat() if self.requested_at else None,
