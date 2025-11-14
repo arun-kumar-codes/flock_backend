@@ -22,7 +22,13 @@ class Config:
     # Paypal Configuration
     PAYPAL_CLIENT_ID = os.getenv('PAYPAL_CLIENT_ID', '')
     PAYPAL_CLIENT_SECRET = os.getenv('PAYPAL_CLIENT_SECRET', '')
-    PAYPAL_SANDBOX = os.getenv('PAYPAL_SANDBOX', 'true').lower() == 'true'
+    print(os.getenv('PAYPAL_SANDBOX_NEW'))
+    PAYPAL_SANDBOX = os.getenv('PAYPAL_SANDBOX_NEW', 'true').lower() == 'true'
+    PAYPAL_REDIRECT_URI = os.getenv('PAYPAL_REDIRECT_URI', '')
+    FRONTEND_SUCCESS_URL = os.getenv('FRONTEND_SUCCESS_URL', '')
+    FRONTEND_ERROR_URL = os.getenv('FRONTEND_ERROR_URL', '')
+    
+    print(PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PAYPAL_SANDBOX, PAYPAL_REDIRECT_URI)
 
 class DevelopmentConfig(Config):
     """Development configuration"""
