@@ -5,6 +5,7 @@ from app import db
 from app.models import User, CreatorEarnings, CPMConfig, StripeAccount, WithdrawalRequest
 from app.services import StripeService
 from app.utils import creator_required
+from app.utils.email import send_withdrawal_request_email
 
 earnings_bp = Blueprint('earnings', __name__)
 
@@ -245,6 +246,13 @@ def request_withdrawal():
     try:
         stripe_service = StripeService()
         withdrawal = stripe_service.process_withdrawal(creator.id, amount)
+        
+        send_withdrawal_request_email(
+            creator.email,
+            creator.username,
+            amount,
+            "Stripe"
+        )
         
         return jsonify({
             'success': True,

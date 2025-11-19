@@ -6,6 +6,12 @@ from app.services.paypal_service import PayPalService
 from app.utils import creator_required
 from flask import redirect  
 import os
+from app.utils.email import (
+    send_withdrawal_request_email,
+    send_withdrawal_processed_email,
+    send_withdrawal_failed_email
+)
+
 
 paypal_bp = Blueprint('paypal', __name__)
 
@@ -163,6 +169,14 @@ def request_paypal_withdrawal():
             )
             db.session.add(withdrawal)
             db.session.commit()
+            
+            send_withdrawal_failed_email(
+                creator.email,
+                withdrawal.creator.username,
+                amount,
+                "PayPal",
+                str(payout.get("details"))
+            )
 
             return jsonify({
                 "success": False,
@@ -184,6 +198,21 @@ def request_paypal_withdrawal():
         
         db.session.add(withdrawal)
         db.session.commit()
+        
+        send_withdrawal_request_email(
+            creator.email,
+            creator.username,
+            amount,
+            "PayPal"
+        )
+        
+        if withdrawal.status == "completed":
+            send_withdrawal_processed_email(
+                creator.email,
+                withdrawal.creator.username,
+                amount,
+                "PayPal"
+            )
 
         return jsonify({
             "success": True,

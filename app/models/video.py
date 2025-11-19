@@ -296,7 +296,11 @@ class Video(db.Model):
             'created_by': self.created_by,
             'creator': self.creator.to_dict() if self.creator else None,
             'comments_count': len(self.comments),
-            'comments': [comment.to_dict() for comment in self.comments],
+            'comments': [
+                c.to_dict(include_hidden=(user_id == self.created_by))
+                for c in self.comments
+                if c.to_dict(include_hidden=(user_id == self.created_by)) is not None
+            ],
             'age_restricted': self.age_restricted,
             'locations': self.locations or [],
             'brand_tags': self.brand_tags or [],
@@ -348,7 +352,7 @@ class VideoComment(db.Model):
     commented_at = db.Column(db.DateTime, default=datetime.utcnow)
     commented_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     video_id = db.Column(db.Integer, db.ForeignKey('videos.id'), nullable=False)
-    
+    is_hidden = db.Column(db.Boolean, default=False)
     commenter = db.relationship('User', backref=db.backref('video_comments', lazy=True, cascade='all, delete-orphan'))
     
     def __init__(self, comment, commented_by, video_id):
@@ -356,15 +360,20 @@ class VideoComment(db.Model):
         self.commented_by = commented_by
         self.video_id = video_id
     
-    def to_dict(self):
+    def to_dict(self, include_hidden=False):
         """Convert comment to dictionary"""
+        
+        if self.is_hidden and not include_hidden:
+            return None
+        
         return {
             'id': self.id,
             'comment': self.comment,
             'commented_at': self.commented_at.isoformat() if self.commented_at else None,
             'commented_by': self.commented_by,
             'video_id': self.video_id,
-            'commenter': self.commenter.to_dict() if self.commenter else None
+            'commenter': self.commenter.to_dict() if self.commenter else None,
+            'is_hidden': self.is_hidden
         }
     
     def __repr__(self):

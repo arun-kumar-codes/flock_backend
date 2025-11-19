@@ -398,7 +398,7 @@ def delete_blog(blog_id):
 
 
 @blog_bp.route('/<int:blog_id>', methods=['GET'])
-@jwt_required()
+@jwt_required(optional=True)
 def get_blog(blog_id):
     """Get a specific blog by ID"""
     try:
@@ -689,6 +689,96 @@ def blog_image_embedding():
     
     except Exception as e:
         return jsonify({'error': 'Internal server error'}), 500
+    
+    
+@blog_bp.route('/comment/<int:comment_id>/hide', methods=['PATCH'])
+@jwt_required()
+@creator_required
+def hide_blog_comment(comment_id):
+    """Creator hides ANY comment on THEIR blog (soft hide)"""
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+        
+        comment = Comment.query.get(comment_id)
+        if not comment:
+            return jsonify({'error': 'Comment not found'}), 404
+        
+        blog = Blog.query.get(comment.blog_id)
+        if not blog:
+            return jsonify({'error': 'Blog not found'}), 404
+        
+        # ensure the creator owns the blog
+        if blog.created_by != user.id:
+            return jsonify({'error': 'You can only hide comments on your own blogs'}), 403
+        
+        comment.is_hidden = True
+        db.session.commit()
+        delete_blog_cache()
+        
+        return jsonify({'message': 'Comment hidden successfully'}), 200
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+
+@blog_bp.route('/comment/<int:comment_id>/unhide', methods=['PATCH'])
+@jwt_required()
+@creator_required
+def unhide_blog_comment(comment_id):
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+        
+        comment = Comment.query.get(comment_id)
+        if not comment:
+            return jsonify({'error': 'Comment not found'}), 404
+        
+        blog = Blog.query.get(comment.blog_id)
+        if blog.created_by != user.id:
+            return jsonify({'error': 'You can only unhide comments on your own blogs'}), 403
+        
+        comment.is_hidden = False
+        db.session.commit()
+        delete_blog_cache()
+        
+        return jsonify({'message': 'Comment unhidden successfully'}), 200
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+
+@blog_bp.route('/comment/<int:comment_id>/creator-delete', methods=['DELETE'])
+@jwt_required()
+@creator_required
+def creator_delete_blog_comment(comment_id):
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+        
+        comment = Comment.query.get(comment_id)
+        if not comment:
+            return jsonify({'error': 'Comment not found'}), 404
+        
+        blog = Blog.query.get(comment.blog_id)
+        if blog.created_by != user.id:
+            return jsonify({'error': 'You can only delete comments on your own blogs'}), 403
+        
+        db.session.delete(comment)
+        db.session.commit()
+        delete_blog_cache()
+        
+        return jsonify({'message': 'Comment deleted successfully'}), 200
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Internal server error'}), 500
+
+
 
 @blog_bp.route('/<int:blog_id>/toggle-comments', methods=['POST'])
 @jwt_required()

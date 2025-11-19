@@ -27,6 +27,15 @@ class User(db.Model):
     profile_picture = db.Column(db.String(500), nullable=True)
     role = db.Column(db.Enum(UserRole), default=UserRole.VIEWER, nullable=False)
     bio = db.Column(db.Text, nullable=True)
+    dob = db.Column(db.Date, nullable=True)
+    reset_token = db.Column(db.String(255), nullable=True)
+    reset_token_expiry = db.Column(db.DateTime, nullable=True)
+    is_verified = db.Column(db.Boolean, default=False)
+    verification_code = db.Column(db.String(10), nullable=True)
+    verification_expiry = db.Column(db.DateTime, nullable=True)
+    last_login_ip = db.Column(db.String(64), nullable=True)
+    last_login_country = db.Column(db.String(100), nullable=True)
+    last_login_user_agent = db.Column(db.String(255), nullable=True)
     following = db.relationship(
         'User', 
         secondary=followers,
@@ -36,11 +45,15 @@ class User(db.Model):
         lazy='dynamic'
     )
     
-    def __init__(self, username=None, email=None, password=None, role=UserRole.VIEWER):
+    def __init__(self, username=None, email=None, password=None, role=UserRole.VIEWER, dob=None, is_verified=False, verification_code=None, verification_expiry=None):
         self.username = username
         self.email = email
         self.password_hash = self._hash_password(password) if password else None
         self.role = role
+        self.dob = dob
+        self.is_verified = is_verified
+        self.verification_code = verification_code
+        self.verification_expiry = verification_expiry
     
     def _hash_password(self, password):
         """Hash password using bcrypt"""
@@ -72,6 +85,10 @@ class User(db.Model):
         if bio is not None:
             self.bio = bio
             
+    def set_password(self, new_password):
+        """Set a new password and hash it"""
+        self.password_hash = self._hash_password(new_password)
+
     def follow(self, user):
         """Follow another user"""
         if not self.is_following(user):
@@ -162,7 +179,10 @@ class User(db.Model):
             'role': self.role.value,
             'followers_count': self.get_followers_count(),
             'following_count': self.get_following_count(),
-            'bio': self.bio
+            'bio': self.bio,
+            'dob': self.dob.isoformat() if self.dob else None,
+            'reset_token': self.reset_token,
+            'reset_token_expiry': self.reset_token_expiry.isoformat() if self.reset_token_expiry else None
         }
         
         if self.role == UserRole.CREATOR:

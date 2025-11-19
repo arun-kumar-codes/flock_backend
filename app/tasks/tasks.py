@@ -10,6 +10,7 @@ from app import db, celery_app
 from app.models import Video, User
 from app.utils import get_video_duration, delete_video_cache
 from dotenv import load_dotenv
+from app.models.upload_session import UploadSession
 
 load_dotenv()
 
@@ -19,7 +20,7 @@ CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN")
 CLOUDFLARE_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID")
 
 
-def upload_video_with_tus(file_path, chunk_size=52428800, max_retries=10, timeout=300):
+def upload_video_with_tus(file_path, task_id, chunk_size=52428800, max_retries=10, timeout=300):
     """Upload video with progress tracking"""
 
     # Extract filename FIRST
@@ -50,6 +51,17 @@ def upload_video_with_tus(file_path, chunk_size=52428800, max_retries=10, timeou
     filename = os.path.basename(file_path)
     file_size = os.path.getsize(file_path)
     file_size_mb = file_size / (1024 * 1024)
+    
+    # Force fresh read from DB, ignore cached object
+    upload_session = (
+        UploadSession.query
+        .filter_by(id=task_id)
+        .execution_options(populate_existing=True)
+        .first()
+    )
+    if upload_session and upload_session.cancelled:
+        print("❌ Upload CANCELLED by user.")
+        return None, None
 
     uploader = tus_client.uploader(
         file_path,
@@ -70,6 +82,31 @@ def upload_video_with_tus(file_path, chunk_size=52428800, max_retries=10, timeou
     last_offset = uploader.offset
 
     while uploader.offset < file_size:
+        
+        # Re-read the UploadSession row from DB on every iteration
+        upload_session = (
+            UploadSession.query
+            .filter_by(id=task_id)
+            .execution_options(populate_existing=True)
+            .first()
+        )
+        if upload_session and upload_session.cancelled:
+            print("❌ Upload CANCELLED by user during upload loop.")
+            # Optional: also tell Cloudflare to drop the partial upload
+            try:
+                if 'uploader' in locals() and uploader.url:
+                    delete_response = requests.delete(
+                        uploader.url,
+                        headers={
+                            "Tus-Resumable": "1.0.0",
+                            "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}",
+                        },
+                    )
+                print(f"🗑️ Deleted partial upload from Cloudflare: {delete_response.status_code}")
+            except Exception as e:
+                print(f"⚠️ Error deleting TUS upload after cancel: {str(e)}")
+            return None, None
+        
         try:
             chunk_start = time.time()
             uploader.upload_chunk()
@@ -87,6 +124,28 @@ def upload_video_with_tus(file_path, chunk_size=52428800, max_retries=10, timeou
             retry_count = 0
 
         except Exception as e:
+            # CRITICAL: Check cancellation during error handling!
+            upload_session = (
+                UploadSession.query
+                .filter_by(id=task_id)
+                .execution_options(populate_existing=True)
+                .first()
+            )
+            if upload_session and upload_session.cancelled:
+                print("❌ Upload CANCELLED during error recovery.")
+                try:
+                    if uploader.url:
+                        requests.delete(
+                            uploader.url,
+                            headers={
+                                "Tus-Resumable": "1.0.0",
+                                "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}",
+                            },
+                        )
+                        print("🗑️ Deleted partial upload from Cloudflare")
+                except:
+                    pass
+                return None, None
             retry_count += 1
             if retry_count > max_retries:
                 elapsed = time.time() - start_time
@@ -99,6 +158,29 @@ def upload_video_with_tus(file_path, chunk_size=52428800, max_retries=10, timeou
             print(f"⏳ Waiting {wait_time}s before retry...")
 
             time.sleep(wait_time)
+            print(f"🔄 Resuming upload from offset {uploader.offset / (1024 * 1024):.1f} MB")
+            
+            upload_session = (
+                UploadSession.query
+                .filter_by(id=task_id)
+                .execution_options(populate_existing=True)
+                .first()
+            )
+            if upload_session and upload_session.cancelled:
+                print("❌ Upload CANCELLED before retry.")
+                try:
+                    if uploader.url:
+                        requests.delete(
+                            uploader.url,
+                            headers={
+                                "Tus-Resumable": "1.0.0",
+                                "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}",
+                            },
+                        )
+                except:
+                    pass
+                return None, None
+            
             print(f"🔄 Resuming upload from offset {uploader.offset / (1024 * 1024):.1f} MB")
 
             uploader = tus_client.uploader(
@@ -116,16 +198,50 @@ def upload_video_with_tus(file_path, chunk_size=52428800, max_retries=10, timeou
     print(f"Upload URL: {upload_url}")
 
     video_uid = upload_url.split('/')[-1].split('?')[0]
-    return video_uid
+    return upload_url, video_uid
 
 
 @celery_app.task(bind=True, name='app.tasks.tasks.upload_video_task')
 def upload_video_task(self, user_id, video_data, video_path, thumb_path=None):
     """Background task to upload video and thumbnail to Cloudflare using TUS protocol (no stream ready wait)"""
     try:
+        
+         # NEW — Mark task as STARTED immediately
+        self.update_state(state='STARTED', meta={'status': 'Preparing upload...'})
+
+        # NEW — Early cancel check before doing any DB writes
+        early_session = UploadSession.query.filter_by(id=self.request.id).first()
+        if early_session and early_session.cancelled:
+            print("❌ Task cancelled before starting - cleaning up")
+            # Cleanup temp files
+            for f in [video_path, thumb_path]:
+                if f and os.path.exists(f):
+                    try:
+                        os.remove(f)
+                    except:
+                        pass
+            self.update_state(state='FAILURE', meta={'error': 'cancelled'})
+            return {"cancelled": True}
+        
         user = User.query.get(user_id)
         if not user:
             raise Exception("User not found")
+        
+        # Register new upload session
+        UploadSession.query.filter_by(id=self.request.id).delete()
+        db.session.commit()
+        upload_session = UploadSession(
+            id=self.request.id,
+            user_id=user_id,
+            temp_path=video_path,
+            cancelled=False
+        )
+
+        db.session.add(upload_session)
+        db.session.commit()
+        
+        # Refresh to ensure we have the latest state
+        db.session.refresh(upload_session)
 
         is_draft = video_data.get("is_draft", False)
         scheduled_at_str = video_data.get("scheduled_at")
@@ -166,11 +282,46 @@ def upload_video_task(self, user_id, video_data, video_path, thumb_path=None):
         print(f"📅 Parsed scheduled_at (UTC): {scheduled_at}")
         print(f"🕒 Current UTC: {now_utc}")
         print(f"🧭 is_future_schedule={is_future_schedule}, is_draft={is_draft}")
-
+        
+        db.session.refresh(upload_session)
+        if upload_session.cancelled:
+            print("❌ Task cancelled before TUS upload")
+            for f in [video_path, thumb_path]:
+                if f and os.path.exists(f):
+                    try:
+                        os.remove(f)
+                    except:
+                        pass
+            self.update_state(state='FAILURE', meta={'error': 'cancelled'})
+            return {"cancelled": True}
 
         # Upload video using TUS
         print(f"Starting TUS upload for video: {video_path}")
-        video_uid = upload_video_with_tus(video_path)
+        upload_url, video_uid = upload_video_with_tus(video_path, self.request.id)
+        
+        # If user cancelled upload midway
+        if upload_url is None and video_uid is None:
+            print("❌ Upload CANCELLED at task level.")
+            for f in [video_path, thumb_path]:
+                if f and os.path.exists(f):
+                    try:
+                        os.remove(f)
+                    except:
+                        pass
+            
+            # Clean up upload session
+            try:
+                UploadSession.query.filter_by(id=self.request.id).delete()
+                db.session.commit()
+            except:
+                db.session.rollback()
+            self.update_state(state='FAILURE', meta={'error': 'cancelled'})
+            return {"cancelled": True}
+        
+        upload_session = UploadSession.query.filter_by(id=self.request.id).first()
+        if upload_session:
+            upload_session.tus_url = upload_url
+            db.session.commit()
         print(f"✓ TUS Upload complete! Video UID: {video_uid}")
 
         # Fetch actual Cloudflare video details (this gives you playback + thumbnail)
@@ -242,9 +393,19 @@ def upload_video_task(self, user_id, video_data, video_path, thumb_path=None):
         # Cleanup temp files
         for f in [video_path, thumb_path]:
             if f and os.path.exists(f):
-                os.remove(f)
+                try:
+                    os.remove(f)
+                except:
+                    pass
 
         print(f"✅ Video committed to DB with UID: {video_uid}")
+        
+         # Clean up upload session
+        try:
+            UploadSession.query.filter_by(id=self.request.id).delete()
+            db.session.commit()
+        except:
+            db.session.rollback()
 
         return {
             "success": True,
@@ -258,9 +419,21 @@ def upload_video_task(self, user_id, video_data, video_path, thumb_path=None):
 
     except Exception as e:
         db.session.rollback()
+        # Cleanup temp files
         for f in [video_path, thumb_path]:
             if f and os.path.exists(f):
-                os.remove(f)
+                try:
+                    os.remove(f)
+                except:
+                    pass
+        
+        # Clean up upload session
+        try:
+            UploadSession.query.filter_by(id=self.request.id).delete()
+            db.session.commit()
+        except:
+            pass
+            
         print(f"❌ Upload error: {str(e)}")
         return {
             "success": False,

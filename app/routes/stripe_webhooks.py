@@ -4,6 +4,12 @@ import stripe
 
 from app import db
 from app.models import StripeAccount, WithdrawalRequest
+from app.utils.email import (
+    send_withdrawal_request_email,
+    send_withdrawal_processed_email,
+    send_withdrawal_failed_email
+)
+
 
 stripe_webhooks_bp = Blueprint('stripe_webhooks', __name__)
 
@@ -68,6 +74,13 @@ def handle_transfer_created(transfer):
             withdrawal.processed_at = datetime.utcnow()
             db.session.commit()
             
+        send_withdrawal_processed_email(
+            withdrawal.creator.email,
+            withdrawal.creator.username,
+            withdrawal.amount,
+            "Stripe"
+        )
+            
     except Exception as e:
         db.session.rollback()
 
@@ -84,6 +97,14 @@ def handle_transfer_failed(transfer):
             withdrawal.status = 'failed'
             withdrawal.failure_reason = transfer.failure_reason
             db.session.commit()
+            
+        send_withdrawal_failed_email(
+            withdrawal.creator.email,
+            withdrawal.amount,
+            withdrawal.creator.username,
+            "Stripe",
+            transfer.failure_reason or "Unknown error"
+        )
             
             
     except Exception as e:

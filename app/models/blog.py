@@ -197,7 +197,12 @@ class Blog(db.Model):
             'created_by': self.created_by,
             'author': self.author.to_dict() if self.author else None,
             'comments_count': len(self.comments),
-            'comments': [comment.to_dict() for comment in self.comments]
+            'comments': [
+                c.to_dict(include_hidden=(user_id == self.created_by))
+                for c in self.comments
+                if c.to_dict(include_hidden=(user_id == self.created_by)) is not None
+            ],
+
         }
     
     def __repr__(self):
@@ -212,7 +217,7 @@ class Comment(db.Model):
     commented_at = db.Column(db.DateTime, default=datetime.utcnow)
     commented_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     blog_id = db.Column(db.Integer, db.ForeignKey('blogs.id'), nullable=False)
-    
+    is_hidden = db.Column(db.Boolean, default=False, nullable=False)
     commenter = db.relationship('User', backref=db.backref('comments', lazy=True, cascade='all, delete-orphan'))
     
     def __init__(self, comment, commented_by, blog_id):
@@ -220,15 +225,19 @@ class Comment(db.Model):
         self.commented_by = commented_by
         self.blog_id = blog_id
     
-    def to_dict(self):
+    def to_dict(self, include_hidden=False):
         """Convert comment to dictionary"""
+        if self.is_hidden and not include_hidden:
+            return None
+        
         return {
             'id': self.id,
             'comment': self.comment,
             'commented_at': self.commented_at.isoformat() if self.commented_at else None,
             'commented_by': self.commented_by,
             'blog_id': self.blog_id,
-            'commenter': self.commenter.to_dict() if self.commenter else None
+            'commenter': self.commenter.to_dict() if self.commenter else None,
+            'is_hidden': self.is_hidden
         }
     
     def __repr__(self):

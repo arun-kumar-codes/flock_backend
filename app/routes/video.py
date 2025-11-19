@@ -14,6 +14,7 @@ from app.tasks.tasks import upload_video_task
 from app import db, cache
 from app.models import Video, User, VideoStatus, VideoComment, VideoWatchTime, UserRole
 from app.utils import creator_required, admin_required, get_video_duration, transcode_video, delete_video_cache
+from app.models.upload_session import UploadSession
 
 video_bp = Blueprint('video', __name__)
 
@@ -110,7 +111,7 @@ def create_video():
 
 
 
-@video_bp.route('/task-status/<task_id>', methods=['GET', 'OPTIONS'])  # Add OPTIONS
+@video_bp.route('/task-status/<task_id>', methods=['GET', 'OPTIONS'])
 @jwt_required()
 def get_task_status(task_id):
     """Get the status of a background task"""
@@ -136,16 +137,37 @@ def get_task_status(task_id):
                 'status': 'Video is uploading...'
             }
         elif task.state == 'SUCCESS':
-            response = {
-                'state': task.state,
-                'status': 'Upload completed successfully!',
-                'result': task.result
-            }
+            # detect cancellation result
+            if isinstance(task.result, dict) and task.result.get("cancelled"):
+                response = {
+                    "state": "CANCELLED",
+                    "status": "Upload cancelled by user"
+                }
+            else:
+                response = {
+                    'state': task.state,
+                    'status': 'Upload completed successfully!',
+                    'result': task.result
+                }
         elif task.state == 'FAILURE':
+            # Detect cancellation
+            if task.info == {"cancelled": True} or \
+               (isinstance(task.info, dict) and task.info.get("error") == "cancelled"):
+                response = {
+                    "state": "CANCELLED",
+                    "status": "Upload cancelled by user"
+                }
+            else:
+                response = {
+                    'state': 'FAILURE',
+                    'status': 'Upload failed',
+                    'error': str(task.info)
+                }
+        # CASE FOR REVOKED
+        elif task.state == 'REVOKED':
             response = {
-                'state': task.state,
-                'status': 'Upload failed',
-                'error': str(task.info)
+                'state': 'CANCELLED',
+                'status': 'Upload cancelled by user'
             }
         else:
             response = {
@@ -162,6 +184,53 @@ def get_task_status(task_id):
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+    
+    
+@video_bp.route("/cancel-upload/<task_id>", methods=["POST"])
+@jwt_required()
+@creator_required
+def cancel_upload(task_id):
+    """Cancel an active TUS upload for a video"""
+    try:
+        session = UploadSession.query.filter_by(id=task_id).first()
+        if not session:
+            return jsonify({"error": "No active upload session"}), 404
+
+        # Mark as cancelled
+        session.cancelled = True
+        db.session.commit()
+        
+        print(f"✅ Upload session {task_id} marked as cancelled")
+
+        # Try to revoke the Celery task
+        try:
+            from app import celery_app
+            celery_app.control.revoke(task_id, terminate=True, signal='SIGKILL')
+            print(f"✅ Celery task {task_id} revoked")
+        except Exception as e:
+            print(f"⚠️ Could not revoke Celery task: {str(e)}")
+
+        # If a TUS upload already started, delete it on Cloudflare
+        if session.tus_url:
+            try:
+                response = requests.delete(
+                    session.tus_url,
+                    headers={
+                        "Tus-Resumable": "1.0.0",
+                        "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}"
+                    },
+                    timeout=5
+                )
+                print(f"🗑️ Cloudflare TUS deletion response: {response.status_code}")
+            except Exception as e:
+                print(f"⚠️ Error deleting TUS upload from Cloudflare: {str(e)}")
+        
+        return jsonify({"message": "Upload cancelled successfully"}), 200
+        
+    except Exception as e:
+        print(f"❌ Error in cancel_upload: {str(e)}")
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 
 @video_bp.route('/<int:video_id>', methods=['PATCH'])
@@ -757,6 +826,92 @@ def delete_video_comment(comment_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': 'Internal server error'}), 500 
+    
+    
+@video_bp.route('/comment/<int:comment_id>/creator-delete', methods=['DELETE'])
+@jwt_required()
+@creator_required
+def creator_delete_comment(comment_id):
+    """Creator can delete ANY comment on THEIR video"""
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+        comment = VideoComment.query.get(comment_id)
+        if not comment:
+            return jsonify({'error': 'Comment not found'}), 404
+
+        video = Video.query.get(comment.video_id)
+        # ensure the logged-in creator OWNS the video
+        if video.created_by != user.id:
+            return jsonify({'error': 'You can only manage comments on your own videos'}), 403
+
+        db.session.delete(comment)
+        db.session.commit()
+        delete_video_cache()
+
+        return jsonify({'message': 'Comment deleted by creator'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+
+@video_bp.route('/comment/<int:comment_id>/hide', methods=['PATCH'])
+@jwt_required()
+@creator_required
+def hide_video_comment(comment_id):
+    """Creator can hide ANY comment on THEIR video"""
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+
+        comment = VideoComment.query.get(comment_id)
+        if not comment:
+            return jsonify({'error': 'Comment not found'}), 404
+
+        video = Video.query.get(comment.video_id)
+
+        if video.created_by != user.id:
+            return jsonify({'error': 'You can only hide comments on your own videos'}), 403
+
+        comment.is_hidden = True
+        db.session.commit()
+        delete_video_cache()
+
+        return jsonify({'message': 'Comment hidden successfully'}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+
+@video_bp.route('/comment/<int:comment_id>/unhide', methods=['PATCH'])
+@jwt_required()
+@creator_required
+def unhide_video_comment(comment_id):
+    try:
+        email = get_jwt_identity()
+        user = User.query.filter_by(email=email).first()
+
+        comment = VideoComment.query.get(comment_id)
+        if not comment:
+            return jsonify({'error': 'Comment not found'}), 404
+
+        video = Video.query.get(comment.video_id)
+        if video.created_by != user.id:
+            return jsonify({'error': 'You can only unhide comments on your own videos'}), 403
+
+        comment.is_hidden = False
+        db.session.commit()
+        delete_video_cache()
+
+        return jsonify({'message': 'Comment unhidden', 'is_hidden': False}), 200
+
+    except Exception:
+        db.session.rollback()
+        return jsonify({'error': 'Internal server error'}), 500
+
 
 
 @video_bp.route('/<int:video_id>/toggle-comments', methods=['POST'])
