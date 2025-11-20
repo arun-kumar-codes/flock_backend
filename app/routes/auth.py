@@ -844,7 +844,7 @@ def forgot_password():
         db.session.commit()
         print("User after saving:", user.reset_token)
 
-        reset_url = f"http://116.202.210.102:3001/reset-password?token={token}"
+        reset_url = f"http://flocktogether.xyz/reset-password?token={token}"
         email_sent = send_reset_password_email(user.email, user.username, reset_url)
 
         if not email_sent:
