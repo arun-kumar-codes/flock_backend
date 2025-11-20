@@ -344,11 +344,43 @@ def login_password():
         # -------------- SECURITY ALERT CHECK --------------
         from app.utils.email import send_security_alert_email
 
-        is_new_ip = user.last_login_ip and user.last_login_ip != current_ip
-        is_new_country = user.last_login_country and user.last_login_country != current_country
-        is_new_agent = user.last_login_user_agent and user.last_login_user_agent != current_user_agent
-
-        if is_new_ip or is_new_country or is_new_agent:
+        def same_subnet(ip1, ip2):
+            if not ip1 or not ip2:
+                return False
+            return ip1.split(".")[:3] == ip2.split(".")[:3]
+        is_new_ip = not same_subnet(user.last_login_ip, current_ip)
+        is_new_country = (
+            current_country != "Unknown" and 
+            user.last_login_country and 
+            user.last_login_country != current_country
+        )
+        def extract_browser(ua):
+            if not ua:
+                return None
+            ua = ua.lower()
+            if "chrome" in ua:
+                return "chrome"
+            if "safari" in ua and "chrome" not in ua:
+                return "safari"
+            if "firefox" in ua:
+                return "firefox"
+            if "edge" in ua:
+                return "edge"
+            return "other"
+        current_browser = extract_browser(current_user_agent)
+        last_browser = extract_browser(user.last_login_user_agent)
+        is_new_agent = (
+            last_browser 
+            and current_browser 
+            and last_browser != current_browser
+        )
+        # Trigger email only if user has previous login info saved
+        has_previous_login = (
+            user.last_login_ip or 
+            user.last_login_country or 
+            user.last_login_user_agent
+        )
+        if has_previous_login and (is_new_ip or is_new_country or is_new_agent):
             send_security_alert_email(
                 user.email,
                 user.username,

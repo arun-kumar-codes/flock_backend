@@ -510,7 +510,7 @@ def delete_video(video_id):
 
 
 @video_bp.route('/<int:video_id>', methods=['GET'])
-@jwt_required()
+@jwt_required(optional=True)
 def get_video(video_id):
     """Get a specific video by ID"""
     try:
@@ -522,7 +522,7 @@ def get_video(video_id):
             return jsonify({'error': 'Video not found'}), 404
         
         return jsonify({
-            'video': video.to_dict(user.id)
+            'video': video.to_dict(user.id if user else None)
         }), 200
         
     except Exception as e:

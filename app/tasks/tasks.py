@@ -20,7 +20,7 @@ CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN")
 CLOUDFLARE_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID")
 
 
-def upload_video_with_tus(file_path, task_id, chunk_size=52428800, max_retries=10, timeout=300):
+def upload_video_with_tus(file_path, task_id, chunk_size=100 * 1024 * 1024, max_retries=10, timeout=300):
     """Upload video with progress tracking"""
 
     # Extract filename FIRST
