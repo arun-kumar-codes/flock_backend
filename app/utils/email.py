@@ -137,6 +137,13 @@ If you didn’t request this, please ignore this email.
 <body style="font-family: Arial, sans-serif; padding: 20px; background-color: #f7f7f7; color: #333;">
     <div style="max-width: 550px; margin: auto; background: white; padding: 30px; border-radius: 12px; 
                 box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+                
+    <!-- LOGO -->
+      <div style="text-align:center; margin-bottom: 25px;">
+        <img src="https://flocktogether.xyz/static/flock-logo.png"
+             alt="FLOCK Logo"
+             style="width:140px; height:auto; display:block; margin:auto;" />
+      </div>
 
         <h2 style="color:#684098; text-align:center; margin-bottom: 20px;">
             Reset Your FLOCK Password
@@ -217,6 +224,13 @@ If you did not request this, please ignore this email.
   <body style="font-family: Arial, sans-serif; padding: 24px; background: #f7f7f7; color:#333;">
     
     <div style="max-width: 520px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08);">
+    
+    <!-- LOGO -->
+      <div style="text-align:center; margin-bottom: 25px;">
+        <img src="https://flocktogether.xyz/static/flock-logo.png"
+             alt="FLOCK Logo"
+             style="width:140px; height:auto; display:block; margin:auto;" />
+      </div>
       
       <h2 style="margin-top: 0; color:#4a4a4a;">Verify Your FLOCK Account</h2>
 
@@ -296,6 +310,13 @@ We’ll notify you once it has been processed.
 <body style="font-family: Arial; background:#f7f7f7; padding:20px;">
     <div style="max-width:550px;margin:auto;background:white;padding:25px;border-radius:12px;
     box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+    
+    <!-- LOGO -->
+      <div style="text-align:center; margin-bottom: 25px;">
+        <img src="https://flocktogether.xyz/static/flock-logo.png"
+             alt="FLOCK Logo"
+             style="width:140px; height:auto; display:block; margin:auto;" />
+      </div>
 
         <h2 style="color:#684098;text-align:center;">Withdrawal Request Submitted</h2>
 
@@ -359,6 +380,13 @@ The funds should arrive shortly depending on your payment provider.
 <body style="font-family: Arial; background:#f7f7f7; padding:20px;">
     <div style="max-width:550px;margin:auto;background:white;padding:25px;border-radius:12px;
     box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+    
+    <!-- LOGO -->
+      <div style="text-align:center; margin-bottom: 25px;">
+        <img src="https://flocktogether.xyz/static/flock-logo.png"
+             alt="FLOCK Logo"
+             style="width:140px; height:auto; display:block; margin:auto;" />
+      </div>
 
         <h2 style="color:#2ecc71;text-align:center;">Payment Successfully Sent</h2>
 
@@ -421,6 +449,13 @@ Please update your payout settings and try again.
 <body style="font-family: Arial; background:#f7f7f7; padding:20px;">
     <div style="max-width:550px;margin:auto;background:white;padding:25px;border-radius:12px;
     box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+    
+    <!-- LOGO -->
+      <div style="text-align:center; margin-bottom: 25px;">
+        <img src="https://flocktogether.xyz/static/flock-logo.png"
+             alt="FLOCK Logo"
+             style="width:140px; height:auto; display:block; margin:auto;" />
+      </div>
 
         <h2 style="color:#e74c3c;text-align:center;">Withdrawal Failed</h2>
 
@@ -485,6 +520,13 @@ If you did NOT perform this login, change your password immediately.
 <body style="font-family: Arial; background:#f7f7f7; padding:20px;">
 <div style="max-width:550px;margin:auto;background:white;padding:25px;border-radius:12px;
     box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+    
+    <!-- LOGO -->
+      <div style="text-align:center; margin-bottom: 25px;">
+        <img src="https://flocktogether.xyz/static/flock-logo.png"
+             alt="FLOCK Logo"
+             style="width:140px; height:auto; display:block; margin:auto;" />
+      </div>
 
 <h2 style="color:#e67e22; text-align:center;">New Login Detected</h2>
 
