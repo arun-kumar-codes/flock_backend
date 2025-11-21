@@ -10,9 +10,6 @@ from config import config
 from celery import Celery
 from dotenv import load_dotenv
 
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-STATIC_DIR = os.path.join(BASE_DIR, "app", "static")
-
 load_dotenv()
 
 # Initialize extensions
@@ -51,7 +48,7 @@ def make_celery(app):
 
 def create_app(config_name='default'):
     """Application factory function"""
-    app = Flask(__name__, static_folder=STATIC_DIR, static_url_path="/static")
+    app = Flask(__name__)
     
     from flask import send_from_directory
     

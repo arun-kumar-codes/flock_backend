@@ -44,7 +44,7 @@ def send_invitation_email(to_email: str) -> bool:
         - Withdraw your earnings securely through integrated payout systems.
         
         To accept this invitation and set up your Creator account, click below:
-        https://beta.flocktogether.xyz/signup
+        https://flocktogether.xyz/signup
         
         Welcome to a new era of content creation. We’re excited to have you on board!
         
@@ -140,7 +140,7 @@ If you didn’t request this, please ignore this email.
                 
     <!-- LOGO -->
       <div style="text-align:center; margin-bottom: 25px;">
-        <img src="https://flocktogether.xyz/static/flock-logo.png"
+        <img src="https://flocktogether.xyz/flock-logo.png"
              alt="FLOCK Logo"
              style="width:140px; height:auto; display:block; margin:auto;" />
       </div>
@@ -227,7 +227,7 @@ If you did not request this, please ignore this email.
     
     <!-- LOGO -->
       <div style="text-align:center; margin-bottom: 25px;">
-        <img src="https://flocktogether.xyz/static/flock-logo.png"
+        <img src="https://flocktogether.xyz/flock-logo.png"
              alt="FLOCK Logo"
              style="width:140px; height:auto; display:block; margin:auto;" />
       </div>
@@ -313,7 +313,7 @@ We’ll notify you once it has been processed.
     
     <!-- LOGO -->
       <div style="text-align:center; margin-bottom: 25px;">
-        <img src="https://flocktogether.xyz/static/flock-logo.png"
+        <img src="https://flocktogether.xyz/flock-logo.png"
              alt="FLOCK Logo"
              style="width:140px; height:auto; display:block; margin:auto;" />
       </div>
@@ -383,7 +383,7 @@ The funds should arrive shortly depending on your payment provider.
     
     <!-- LOGO -->
       <div style="text-align:center; margin-bottom: 25px;">
-        <img src="https://flocktogether.xyz/static/flock-logo.png"
+        <img src="https://flocktogether.xyz/flock-logo.png"
              alt="FLOCK Logo"
              style="width:140px; height:auto; display:block; margin:auto;" />
       </div>
@@ -452,7 +452,7 @@ Please update your payout settings and try again.
     
     <!-- LOGO -->
       <div style="text-align:center; margin-bottom: 25px;">
-        <img src="https://flocktogether.xyz/static/flock-logo.png"
+        <img src="https://flocktogether.xyz/flock-logo.png"
              alt="FLOCK Logo"
              style="width:140px; height:auto; display:block; margin:auto;" />
       </div>
@@ -523,7 +523,7 @@ If you did NOT perform this login, change your password immediately.
     
     <!-- LOGO -->
       <div style="text-align:center; margin-bottom: 25px;">
-        <img src="https://flocktogether.xyz/static/flock-logo.png"
+        <img src="https://flocktogether.xyz/flock-logo.png"
              alt="FLOCK Logo"
              style="width:140px; height:auto; display:block; margin:auto;" />
       </div>
