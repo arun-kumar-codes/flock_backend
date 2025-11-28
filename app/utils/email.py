@@ -73,7 +73,7 @@ def send_invitation_email(to_email: str) -> bool:
                 <p>To accept this invitation and set up your Creator account, click below:</p>
                 
                 <div style="text-align: center; margin: 30px 0;">
-                    <a href="https://beta.flocktogether.xyz/signup" style="background-color: #3498db; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">Join FLOCK Now</a>
+                    <a href="https://flocktogether.xyz/signup" style="background-color: #3498db; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">Join FLOCK Now</a>
                 </div>
                 
                 <p>Welcome to a new era of content creation. We’re excited to have you on board!</p>
@@ -90,7 +90,7 @@ def send_invitation_email(to_email: str) -> bool:
         """
         
         params: resend.Emails.SendParams = {
-        "from": "FlockTogether <admin@notifications.flocktogether.xyz>",
+        "from": "FlockTogether <admin@flocktogether.xyz>",
         "to": [to_email],
         "subject": subject,
         "html": html_body,
