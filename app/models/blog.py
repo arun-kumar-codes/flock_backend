@@ -37,9 +37,9 @@ class Blog(db.Model):
     is_scheduled = db.Column(db.Boolean, default=False, index=True)
     show_comments = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
-    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     
-    author = db.relationship('User', backref=db.backref('blogs', lazy=True))
+    author = db.relationship('User', backref=db.backref('blogs', lazy=True, cascade="all, delete-orphan", passive_deletes=True))
     comments = db.relationship('Comment', backref='blog', lazy=True, cascade='all, delete-orphan')
     
     def __init__(self, title, content, created_by, image=None, keywords=None, is_draft=False, is_scheduled=False, scheduled_at=None, age_restricted=False, locations=None, brand_tags=None, paid_promotion=False):
@@ -215,10 +215,10 @@ class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     comment = db.Column(db.Text, nullable=False)
     commented_at = db.Column(db.DateTime, default=datetime.utcnow)
-    commented_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    blog_id = db.Column(db.Integer, db.ForeignKey('blogs.id'), nullable=False)
+    commented_by = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    blog_id = db.Column(db.Integer, db.ForeignKey('blogs.id', ondelete='CASCADE'), nullable=False)
     is_hidden = db.Column(db.Boolean, default=False, nullable=False)
-    commenter = db.relationship('User', backref=db.backref('comments', lazy=True, cascade='all, delete-orphan'))
+    commenter = db.relationship('User', backref=db.backref('comments', lazy=True, cascade="all, delete-orphan", passive_deletes=True))
     
     def __init__(self, comment, commented_by, blog_id):
         self.comment = comment

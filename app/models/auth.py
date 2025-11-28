@@ -12,8 +12,8 @@ class UserRole(Enum):
     
 followers = Table('followers',
     db.metadata,
-    Column('follower_id', Integer, ForeignKey('users.id'), primary_key=True),
-    Column('followed_id', Integer, ForeignKey('users.id'), primary_key=True),
+    Column('follower_id', Integer, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True),
+    Column('followed_id', Integer, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True),
     Column('created_at', DateTime, default=datetime.utcnow)
 )
 

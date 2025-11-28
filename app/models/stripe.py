@@ -8,7 +8,7 @@ class StripeAccount(db.Model):
     __tablename__ = 'stripe_accounts'
     
     id = db.Column(db.Integer, primary_key=True)
-    creator_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, unique=True)
+    creator_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete="CASCADE"), nullable=False, unique=True)
     stripe_account_id = db.Column(db.String(255), nullable=False, unique=True)
     account_status = db.Column(db.String(50), default='pending')
     charges_enabled = db.Column(db.Boolean, default=False)
@@ -16,7 +16,7 @@ class StripeAccount(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    creator = db.relationship('User', backref=db.backref('stripe_account', lazy=True))
+    creator = db.relationship('User', backref=db.backref('stripe_account', lazy=True, cascade="all, delete-orphan", passive_deletes=True))
     
     def to_dict(self):
         return {
@@ -36,7 +36,7 @@ class WithdrawalRequest(db.Model):
     __tablename__ = 'withdrawal_requests'
 
     id = db.Column(db.Integer, primary_key=True)
-    creator_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    creator_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
     amount = db.Column(Numeric(10, 2), nullable=False)
     
     # New fields ↓
@@ -49,7 +49,7 @@ class WithdrawalRequest(db.Model):
     requested_at = db.Column(db.DateTime, default=datetime.utcnow)
     processed_at = db.Column(db.DateTime, nullable=True)
 
-    creator = db.relationship('User', backref=db.backref('withdrawal_requests', lazy=True))
+    creator = db.relationship('User', backref=db.backref('withdrawal_requests', lazy=True, cascade="all, delete-orphan", passive_deletes=True))
 
     def to_dict(self):
         return {

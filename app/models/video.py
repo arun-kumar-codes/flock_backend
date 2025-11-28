@@ -37,13 +37,13 @@ class Video(db.Model):
     is_scheduled = db.Column(db.Boolean, default=False, index=True)
     show_comments = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
-    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     age_restricted = db.Column(db.Boolean, default=False)   # True = Not for kids 
     locations = db.Column(db.JSON, default=[])
     brand_tags = db.Column(MutableList.as_mutable(ARRAY(db.String(250))), default=list, nullable=True)
     paid_promotion = db.Column(db.Boolean, default=False)
 
-    creator = db.relationship('User', backref=db.backref('videos', lazy=True)) 
+    creator = db.relationship('User', backref=db.backref('videos', lazy=True, cascade="all, delete-orphan", passive_deletes=True))
     comments = db.relationship('VideoComment', backref='video', lazy=True, cascade='all, delete-orphan')
     watch_times = db.relationship('VideoWatchTime', backref='video', lazy=True, cascade='all, delete-orphan')
     
@@ -315,12 +315,12 @@ class VideoWatchTime(db.Model):
     __tablename__ = 'video_watch_times'
     
     id = db.Column(db.Integer, primary_key=True)
-    video_id = db.Column(db.Integer, db.ForeignKey('videos.id'), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    video_id = db.Column(db.Integer, db.ForeignKey('videos.id', ondelete='CASCADE'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=True)
     watch_time = db.Column(db.Integer, default=0)
     last_watched = db.Column(db.DateTime, default=datetime.utcnow)
     
-    viewer = db.relationship('User', backref=db.backref('video_watch_times', lazy=True))
+    viewer = db.relationship('User', backref=db.backref('video_watch_times', lazy=True, cascade="all, delete-orphan", passive_deletes=True))
     
     def __init__(self, video_id, user_id, watch_time=0):
         self.video_id = video_id
@@ -350,10 +350,10 @@ class VideoComment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     comment = db.Column(db.Text, nullable=False)
     commented_at = db.Column(db.DateTime, default=datetime.utcnow)
-    commented_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    video_id = db.Column(db.Integer, db.ForeignKey('videos.id'), nullable=False)
+    commented_by = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    video_id = db.Column(db.Integer, db.ForeignKey('videos.id', ondelete='CASCADE'), nullable=False)
     is_hidden = db.Column(db.Boolean, default=False)
-    commenter = db.relationship('User', backref=db.backref('video_comments', lazy=True, cascade='all, delete-orphan'))
+    commenter = db.relationship('User', backref=db.backref('video_comments', lazy=True, cascade='all, delete-orphan', passive_deletes=True))
     
     def __init__(self, comment, commented_by, video_id):
         self.comment = comment

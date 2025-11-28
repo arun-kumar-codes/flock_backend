@@ -12,9 +12,9 @@ class CPMConfig(db.Model):
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    updated_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    updated_by = db.Column(db.Integer, db.ForeignKey('users.id', ondelete="SET NULL"), nullable=True)
     
-    admin = db.relationship('User', backref=db.backref('cpm_updates', lazy=True))
+    admin = db.relationship('User', backref=db.backref('cpm_updates', lazy=True, cascade="all, delete-orphan", passive_deletes=True))
     
     def __init__(self, cpm_rate=2.00, updated_by=None):
         self.cpm_rate = cpm_rate
