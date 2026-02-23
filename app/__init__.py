@@ -51,6 +51,7 @@ def create_app(config_name='default'):
     app = Flask(__name__)
     
     from flask import send_from_directory
+    import firebase_setup
     
     @app.route('/static/<path:filename>')
     def static_files(filename):
