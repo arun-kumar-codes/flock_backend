@@ -10,12 +10,15 @@ from app import db
 from app.models import User, UserRole, Invitation, Video, Blog, VideoStatus, BlogStatus
 from app.utils import admin_required, creator_required, delete_video_cache
 from app.utils import allowed_file, delete_blog_cache, delete_previous_image
-from app.utils.email import send_reset_password_email
+from app.utils.email import (
+    send_reset_password_email,
+    send_verification_email,
+    send_account_deleted_email,
+)
 import secrets
 from datetime import datetime, timedelta, date
 import random
 from urllib.parse import unquote
-from app.utils.email import send_verification_email
 
 
 auth_bp = Blueprint('auth', __name__)
@@ -251,7 +254,7 @@ def complete_profile():
 @auth_bp.route('/update-profile', methods=['PUT'])
 @jwt_required()
 def update_profile():
-    """Update user profile information (username and profile picture)"""
+    """Update user profile information (username, profile picture, bio, DOB)."""
     try:
         email = get_jwt_identity()
         user = User.query.filter_by(email=email).first()
@@ -261,15 +264,33 @@ def update_profile():
         
         username = request.form.get('username')
         bio = request.form.get('bio')
+        dob_str = request.form.get('dob')
         profile_picture_file = request.files.get('profile_picture')
         
-        if username is None and profile_picture_file is None:
-            return jsonify({'error': 'At least one field (username or profile_picture) is required'}), 400
+        if username is None and profile_picture_file is None and bio is None and dob_str is None:
+            return jsonify({'error': 'At least one field (username, profile_picture, bio, or dob) is required'}), 400
             
         if username is not None:
             existing_user = User.query.filter_by(username=username).first()
             if existing_user and existing_user.email != email:
                 return jsonify({'error': 'Username already exists'}), 400
+
+        # One-time DOB update: can only be set if currently null
+        if dob_str is not None:
+            if user.dob is not None:
+                return jsonify({'error': 'Date of birth is already set and cannot be changed'}), 400
+            try:
+                dob_value = datetime.strptime(dob_str, "%Y-%m-%d").date()
+            except ValueError:
+                return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+
+            # Age check: must be at least 13 years old
+            today = date.today()
+            age = today.year - dob_value.year - ((today.month, today.day) < (dob_value.month, dob_value.day))
+            if age < 13:
+                return jsonify({'error': 'You must be at least 13 years old to use this service.'}), 400
+
+            user.dob = dob_value
         
         profile_picture_path = None
         if profile_picture_file and profile_picture_file.filename != '':
@@ -588,8 +609,20 @@ def delete_user(id):
         user = User.query.filter_by(id=id).first()
         if not user:
             return jsonify({'error': 'User not found'}), 404
+
+        # Capture data needed for email before deleting
+        email = user.email
+        username = user.username
+        role = user.role
+
         db.session.delete(user)
         db.session.commit()
+
+        # Notify creators that their account was deleted
+        if role == UserRole.CREATOR and email:
+            # Fire-and-forget style; don't fail the request if email sending fails
+            send_account_deleted_email(email, username)
+
         return jsonify({'message': 'User deleted successfully'}), 200
     except Exception as e:
         db.session.rollback()

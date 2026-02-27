@@ -284,6 +284,76 @@ If you did not request this, please ignore this email.
         return False
 
 
+def send_account_deleted_email(to_email: str, username: str | None = None) -> bool:
+    """
+    Notify a creator that their account has been deleted by an admin.
+    """
+    try:
+        name = username or to_email.split("@")[0]
+
+        subject = "Your FLOCK creator account has been deleted"
+
+        text_body = f"""
+Dear {name},
+
+Your FLOCK creator account has been deleted by an administrator.
+
+This means your access to the creator dashboard and your content is no longer available.
+If you believe this was done in error or have questions, please reply to this email.
+
+— The FLOCK Team
+"""
+
+        html_body = f"""
+<html>
+  <body style="font-family: Arial, sans-serif; padding: 24px; background: #f7f7f7; color:#333;">
+    <div style="max-width: 520px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08);">
+      <div style="text-align:center; margin-bottom: 25px;">
+        <img src="https://flocktogether.xyz/flock-logo.png"
+             alt="FLOCK Logo"
+             style="width:140px; height:auto; display:block; margin:auto;" />
+      </div>
+
+      <h2 style="margin-top: 0; color:#4a4a4a; text-align:center;">
+        Your FLOCK creator account has been deleted
+      </h2>
+
+      <p>Dear <b>{name}</b>,</p>
+
+      <p>
+        This is to let you know that your <strong>FLOCK creator account</strong> has been
+        deleted by an administrator. Your access to the creator dashboard and content
+        associated with this account has been removed.
+      </p>
+
+      <p style="font-size:14px; color:#666;">
+        If you believe this was a mistake or you have any questions about this decision,
+        please reply to this email and our team will review your case.
+      </p>
+
+      <p style="margin-top: 25px; font-size: 14px; color:#777;">
+        — The FLOCK Team
+      </p>
+    </div>
+  </body>
+</html>
+"""
+
+        params: resend.Emails.SendParams = {
+            "from": "FlockTogether <admin@flocktogether.xyz>",
+            "to": [to_email],
+            "subject": subject,
+            "html": html_body,
+            "text": text_body,
+        }
+
+        resend.Emails.send(params)
+        print(f"Account deleted email sent to {to_email}")
+        return True
+
+    except Exception as e:
+        print("Account deleted email sending error:", e)
+        return False
 
 
 def send_withdrawal_request_email(to_email: str, username: str,  amount: float, method: str) -> bool:
