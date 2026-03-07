@@ -139,7 +139,8 @@ def login():
             return jsonify({'error': 'idToken is required'}), 400
 
         # Verify Firebase token and extract fields
-        decoded_token = firebase_auth.verify_id_token(id_token)
+        # Added clock_skew_seconds=60 to handle "Token used too early" errors caused by clock drift
+        decoded_token = firebase_auth.verify_id_token(id_token, clock_skew_seconds=60)
         email = decoded_token.get('email')
         picture_url = decoded_token.get('picture')  # <-- from your token sample
 
@@ -228,19 +229,32 @@ def complete_profile():
         email = get_jwt_identity()
         username = request.json.get('username')
         password = request.json.get('password')
+        dob = request.json.get('dob')
         
-        if not username or not password:
-            return jsonify({'error': 'All fields are required'}), 400
+        if not username or not password or not dob:
+            return jsonify({'error': 'Username, password, and date of birth are required'}), 400
             
+        # DOB validation
+        try:
+            dob_value = datetime.strptime(dob, "%Y-%m-%d").date()
+        except ValueError:
+            return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+
+        today = date.today()
+        age = today.year - dob_value.year - ((today.month, today.day) < (dob_value.month, dob_value.day))
+
+        if age < 13:
+            return jsonify({'error': 'You must be at least 13 years old to use this service.'}), 400
+
         existing_user = User.query.filter_by(username=username).first()
-        if existing_user:
+        if existing_user and existing_user.email != email:
             return jsonify({'error': 'Username already exists'}), 400
             
         user = User.query.filter_by(email=email).first()
         if not user:
             return jsonify({'error': 'User not found'}), 404
             
-        user.complete_profile(username, password)
+        user.complete_profile(username, password, dob_value)
         db.session.commit()
         
         return jsonify({

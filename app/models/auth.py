@@ -68,13 +68,14 @@ class User(db.Model):
         return bcrypt.checkpw(password.encode('utf-8'), self.password_hash.encode('utf-8'))
     
     def is_profile_complete(self):
-        """Check if user has completed their profile (username, email and password)"""
-        return self.username is not None and self.password_hash is not None
+        """Check if user has completed their profile (username, email, dob and password)"""
+        return self.username is not None and self.password_hash is not None and self.dob is not None
     
-    def complete_profile(self, username, password):
-        """Complete user profile with username and password (initial profile setup)"""
+    def complete_profile(self, username, password, dob):
+        """Complete user profile with username, password and dob (initial profile setup)"""
         self.username = username
         self.password_hash = self._hash_password(password)
+        self.dob = dob
     
     def update_profile(self, username=None, profile_picture=None, bio=None):
         """Update user profile information (username and profile picture)"""
