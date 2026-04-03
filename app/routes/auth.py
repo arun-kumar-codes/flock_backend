@@ -143,9 +143,44 @@ def login():
         decoded_token = firebase_auth.verify_id_token(id_token, clock_skew_seconds=60)
         email = decoded_token.get('email')
         picture_url = decoded_token.get('picture')  # <-- from your token sample
+        firebase_uid = decoded_token.get('uid') or decoded_token.get('user_id') or decoded_token.get('sub')
+
+        # Some Facebook/Firebase users have email only in provider_data, not in ID token claims.
+        # Fallback to Firebase user record so social login does not fail incorrectly.
+        if not email and firebase_uid:
+            try:
+                firebase_user = firebase_auth.get_user(firebase_uid)
+                email = firebase_user.email
+
+                if not email:
+                    # Prefer facebook.com provider email when available.
+                    provider_data = firebase_user.provider_data or []
+                    for provider in provider_data:
+                        if getattr(provider, 'provider_id', None) == 'facebook.com' and getattr(provider, 'email', None):
+                            email = provider.email
+                            break
+
+                    # Generic provider email fallback.
+                    if not email:
+                        for provider in provider_data:
+                            provider_email = getattr(provider, 'email', None)
+                            if provider_email:
+                                email = provider_email
+                                break
+
+                # Best effort: write back canonical email so future ID tokens include `email`.
+                if email and not firebase_user.email:
+                    try:
+                        firebase_auth.update_user(firebase_uid, email=email)
+                    except Exception as sync_error:
+                        print(f"[login] Could not sync Firebase top-level email for {firebase_uid}: {sync_error}")
+            except Exception as user_lookup_error:
+                print(f"[login] Firebase user lookup failed for {firebase_uid}: {user_lookup_error}")
 
         if not email:
-            return jsonify({'error': 'Email not found in Firebase token'}), 400
+            return jsonify({'error': 'Email not found in Firebase token or Firebase user profile'}), 400
+
+        email = email.strip().lower()
 
         is_new_user = False
         user = User.query.filter_by(email=email).first()
