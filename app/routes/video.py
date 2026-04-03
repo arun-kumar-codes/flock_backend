@@ -237,7 +237,7 @@ def cancel_upload(task_id):
 @jwt_required()
 @creator_required
 def update_video(video_id):
-    """Update a video (title, description, keywords, thumbnail, age restriction)"""
+    """Update a video (including schedule edits)"""
     try:
         email = get_jwt_identity()
         user = User.query.filter_by(email=email).first()
@@ -254,7 +254,9 @@ def update_video(video_id):
         if video.status not in [VideoStatus.DRAFT, VideoStatus.PUBLISHED, VideoStatus.REJECTED]:
             return jsonify({'error': 'Check video status'}), 400
 
-        # Handle form data (frontend must send FormData, not JSON)
+        payload = request.get_json(silent=True) or {}
+
+        # Handle form data (or JSON for schedule-only edits)
         title = request.form.get('title')
         description = request.form.get('description')
         keywords = request.form.get('keywords')  # JSON string or comma separated
@@ -263,6 +265,13 @@ def update_video(video_id):
         thumbnail_file = request.files.get('thumbnail')
         paid_promotion = request.form.get("paid_promotion")
         brand_tags = request.form.get("brand_tags")
+        scheduled_at_str = request.form.get('scheduled_at')
+        is_scheduled_raw = request.form.get('is_scheduled')
+
+        if scheduled_at_str is None and 'scheduled_at' in payload:
+            scheduled_at_str = payload.get('scheduled_at')
+        if is_scheduled_raw is None and 'is_scheduled' in payload:
+            is_scheduled_raw = payload.get('is_scheduled')
 
         if title:
             if len(title) > 200:
@@ -308,6 +317,26 @@ def update_video(video_id):
 
         if paid_promotion is not None:
             video.paid_promotion = str(paid_promotion).lower() in ["true", "1", "yes"]
+
+        if scheduled_at_str is not None:
+            if str(scheduled_at_str).strip() == "":
+                video.is_scheduled = False
+                video.scheduled_at = None
+            else:
+                try:
+                    scheduled_at = datetime.fromisoformat(str(scheduled_at_str).replace('Z', '+00:00'))
+                    scheduled_at = scheduled_at.replace(tzinfo=None)
+                    if scheduled_at <= datetime.utcnow():
+                        return jsonify({'error': 'Scheduled time must be in the future'}), 400
+                    video.scheduled_at = scheduled_at
+                    video.is_scheduled = True
+                    video.is_draft = True
+                    video.status = VideoStatus.DRAFT
+                except ValueError:
+                    return jsonify({'error': 'Invalid scheduled_at format. Use ISO format (e.g., 2025-01-15T14:30:00Z)'}), 400
+        elif is_scheduled_raw is not None and str(is_scheduled_raw).lower() in ["false", "0", "no"]:
+            video.is_scheduled = False
+            video.scheduled_at = None
 
         if thumbnail_file:
             thumb_ext = thumbnail_file.filename.lower().split('.')[-1]

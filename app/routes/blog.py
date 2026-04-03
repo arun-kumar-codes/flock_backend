@@ -116,7 +116,7 @@ def create_blog():
 @jwt_required()
 @creator_required
 def update_blog(blog_id):
-    """Update a blog (title, content, image) - only draft, published or rejected blogs"""
+    """Update a blog (including schedule edits) - only draft, published or rejected blogs"""
     try:
         email = get_jwt_identity()
         user = User.query.filter_by(email=email).first()
@@ -134,6 +134,8 @@ def update_blog(blog_id):
         if blog.status not in [BlogStatus.DRAFT, BlogStatus.PUBLISHED, BlogStatus.REJECTED]:
             return jsonify({'error': 'Check blog status'}), 400
         
+        payload = request.get_json(silent=True) or {}
+
         title = request.form.get('title')
         content = request.form.get('content')
         image_file = request.files.get('image')
@@ -143,6 +145,13 @@ def update_blog(blog_id):
         age_restricted = request.form.get('age_restricted')
         paid_promotion = request.form.get("paid_promotion")
         brand_tags = request.form.get("brand_tags")
+        scheduled_at_str = request.form.get('scheduled_at')
+        is_scheduled_raw = request.form.get('is_scheduled')
+
+        if scheduled_at_str is None and 'scheduled_at' in payload:
+            scheduled_at_str = payload.get('scheduled_at')
+        if is_scheduled_raw is None and 'is_scheduled' in payload:
+            is_scheduled_raw = payload.get('is_scheduled')
         
         if locations is not None:
             try:
@@ -188,6 +197,26 @@ def update_blog(blog_id):
 
         if paid_promotion is not None:
             blog.paid_promotion = str(paid_promotion).lower() in ["true", "1", "yes"]
+
+        if scheduled_at_str is not None:
+            if str(scheduled_at_str).strip() == "":
+                blog.is_scheduled = False
+                blog.scheduled_at = None
+            else:
+                try:
+                    scheduled_at = datetime.fromisoformat(str(scheduled_at_str).replace('Z', '+00:00'))
+                    scheduled_at = scheduled_at.replace(tzinfo=None)
+                    if scheduled_at <= datetime.utcnow():
+                        return jsonify({'error': 'Scheduled time must be in the future'}), 400
+                    blog.scheduled_at = scheduled_at
+                    blog.is_scheduled = True
+                    blog.is_draft = True
+                    blog.status = BlogStatus.DRAFT
+                except ValueError:
+                    return jsonify({'error': 'Invalid scheduled_at format. Use ISO format (e.g., 2025-01-15T14:30:00Z)'}), 400
+        elif is_scheduled_raw is not None and str(is_scheduled_raw).lower() in ["false", "0", "no"]:
+            blog.is_scheduled = False
+            blog.scheduled_at = None
         
         if image_file and image_file.filename != '':
             if not allowed_file(image_file.filename):
