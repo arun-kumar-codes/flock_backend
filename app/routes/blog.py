@@ -52,7 +52,8 @@ def create_blog():
         if scheduled_at_str:
             try:
                 scheduled_at = datetime.fromisoformat(scheduled_at_str.replace('Z', '+00:00'))
-                scheduled_at = scheduled_at.replace(tzinfo=None)
+                if scheduled_at.tzinfo is not None:
+                    scheduled_at = scheduled_at.astimezone(timezone.utc).replace(tzinfo=None)
                 if scheduled_at <= datetime.utcnow():
                     return jsonify({'error': 'Scheduled time must be in the future'}), 400
                 is_scheduled = True
@@ -205,7 +206,8 @@ def update_blog(blog_id):
             else:
                 try:
                     scheduled_at = datetime.fromisoformat(str(scheduled_at_str).replace('Z', '+00:00'))
-                    scheduled_at = scheduled_at.replace(tzinfo=None)
+                    if scheduled_at.tzinfo is not None:
+                        scheduled_at = scheduled_at.astimezone(timezone.utc).replace(tzinfo=None)
                     if scheduled_at <= datetime.utcnow():
                         return jsonify({'error': 'Scheduled time must be in the future'}), 400
                     blog.scheduled_at = scheduled_at

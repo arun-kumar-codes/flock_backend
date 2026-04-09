@@ -971,6 +971,12 @@ def reset_password():
                 )
             }), 400
 
+        # Do not allow reusing the current password during reset.
+        if user.check_password(new_password):
+            return jsonify({
+                "error": "New password must be different from your current password"
+            }), 400
+
         user.password_hash = user._hash_password(new_password)
         user.reset_token = None
         user.reset_token_expiry = None
@@ -1014,6 +1020,9 @@ def change_password():
                     'an uppercase letter, lowercase letter, number, and special character.'
                 )
             }), 400
+
+        if user.check_password(new_password):
+            return jsonify({'error': 'New password must be different from current password'}), 400
 
         # Update new password
         user.password_hash = user._hash_password(new_password)

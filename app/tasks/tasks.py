@@ -365,6 +365,13 @@ def upload_video_task(self, user_id, video_data, video_path, thumb_path=None):
 
         # Duration
         duration = get_video_duration(video_path)
+        if duration is None:
+            try:
+                cf_duration = details_data.get("duration")
+                if cf_duration is not None:
+                    duration = int(float(cf_duration))
+            except (TypeError, ValueError):
+                duration = None
 
         # Create video record in DB
         video = Video(

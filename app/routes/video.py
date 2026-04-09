@@ -49,7 +49,8 @@ def create_video():
         if scheduled_at_str:
             try:
                 scheduled_at = datetime.fromisoformat(scheduled_at_str.replace('Z', '+00:00'))
-                scheduled_at = scheduled_at.replace(tzinfo=None)
+                if scheduled_at.tzinfo is not None:
+                    scheduled_at = scheduled_at.astimezone(timezone.utc).replace(tzinfo=None)
                 if scheduled_at <= datetime.utcnow():
                     return jsonify({'error': 'Scheduled time must be in the future'}), 400
                 is_scheduled = True
@@ -325,7 +326,8 @@ def update_video(video_id):
             else:
                 try:
                     scheduled_at = datetime.fromisoformat(str(scheduled_at_str).replace('Z', '+00:00'))
-                    scheduled_at = scheduled_at.replace(tzinfo=None)
+                    if scheduled_at.tzinfo is not None:
+                        scheduled_at = scheduled_at.astimezone(timezone.utc).replace(tzinfo=None)
                     if scheduled_at <= datetime.utcnow():
                         return jsonify({'error': 'Scheduled time must be in the future'}), 400
                     video.scheduled_at = scheduled_at
@@ -773,15 +775,19 @@ def add_video_watch_time(video_id):
         if video.status != VideoStatus.PUBLISHED:
             return jsonify({'error': 'Only published videos can have watch time'}), 400
         
-        watch_time_seconds = request.json.get('watch_time')
+        payload = request.get_json(silent=True) or {}
+        watch_time_seconds = payload.get('watch_time')
         if not watch_time_seconds or not isinstance(watch_time_seconds, (int, float)) or watch_time_seconds <= 0:
             return jsonify({'error': 'Valid watch_time (positive number) is required in payload'}), 400
-        
-        if watch_time_seconds <= 0.1 * video.duration:
-            return jsonify({'error': 'Watch time must be greater than 10% of video duration'}), 400
-        if watch_time_seconds > video.duration:
-            # return jsonify({'error': 'Watch time cannot be greater than video duration'}), 400
-            watch_time_seconds = video.duration
+
+        # Some videos may have unknown duration (e.g., ffprobe unavailable during upload).
+        # Apply duration-based checks only when duration is a valid positive number.
+        duration_seconds = video.duration if isinstance(video.duration, (int, float)) and video.duration > 0 else None
+        if duration_seconds is not None:
+            if watch_time_seconds <= 0.1 * duration_seconds:
+                return jsonify({'error': 'Watch time must be greater than 10% of video duration'}), 400
+            if watch_time_seconds > duration_seconds:
+                watch_time_seconds = duration_seconds
         
         video.add_watch_time(user.id, int(watch_time_seconds))
         db.session.commit()
@@ -796,6 +802,7 @@ def add_video_watch_time(video_id):
         
     except Exception as e:
         db.session.rollback()
+        print("Error in add_video_watch_time:", e)
         return jsonify({'error': 'Internal server error'}), 500
 
 

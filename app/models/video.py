@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
@@ -154,10 +155,10 @@ class Video(db.Model):
         
         from app.models import CreatorEarnings, CPMConfig
         cpm_config = CPMConfig.get_active_config()
-        if not cpm_config:
+        if not cpm_config or cpm_config.cpm_rate is None:
             cpm_rate = Decimal('2.00')
         else:
-            cpm_rate = cpm_config.cpm_rate
+            cpm_rate = Decimal(str(cpm_config.cpm_rate))
         
         earnings = (Decimal(str(watch_time_minutes)) / Decimal('1000')) * cpm_rate
         
@@ -258,10 +259,22 @@ class Video(db.Model):
             self.scheduled_at = None
             return True
         return False
+
+    def get_stream_video_id(self):
+        """Extract the Cloudflare Stream id from supported playback URLs."""
+        if not self.video:
+            return None
+        match = re.search(r"videodelivery\.net/([^/?]+)", self.video)
+        if match:
+            return match.group(1)
+        match = re.search(r"cloudflarestream\.com/([^/?]+)/", self.video)
+        if match:
+            return match.group(1)
+        return None
     
     def to_dict(self, user_id=None):
         """Convert video to dictionary"""
-        video_id = self.video.strip().split("/")[-2] if self.video else None
+        video_id = self.get_stream_video_id()
 
         return {
             'id': self.id,
