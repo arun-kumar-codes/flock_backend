@@ -662,14 +662,11 @@ def delete_user(id):
         # Capture data needed for email before deleting
         email = user.email
         username = user.username
-        role = user.role
-
         db.session.delete(user)
         db.session.commit()
 
-        # Notify creators that their account was deleted
-        if role == UserRole.CREATOR and email:
-            # Fire-and-forget style; don't fail the request if email sending fails
+        # Notify deleted user (fire-and-forget; don't fail request on email error)
+        if email:
             send_account_deleted_email(email, username)
 
         return jsonify({'message': 'User deleted successfully'}), 200
