@@ -82,6 +82,7 @@ class Blog(db.Model):
         self.is_draft = False
         self.is_scheduled = False
         self.scheduled_at = None
+        self.created_at = datetime.utcnow()
         return True
     
     def reject(self, reason):
@@ -163,6 +164,7 @@ class Blog(db.Model):
             self.is_draft = False
             self.is_scheduled = False
             self.scheduled_at = None
+            self.created_at = datetime.utcnow()
             return True
         return False
 
